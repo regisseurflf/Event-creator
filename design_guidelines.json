@@ -1,0 +1,107 @@
+{
+  "theme": "dark",
+  "archetype": "4/5 Hybrid (Swiss Brutalist / Jewel & Luxury)",
+  "mood": "Cinematic, Backstage, Editorial, Precision",
+  "colors": {
+    "background": {
+      "base": "#0A0A0C",
+      "surface": "#121215",
+      "elevated": "#1C1C21"
+    },
+    "primary": {
+      "main": "#FF5A00",
+      "hover": "#FF7A33",
+      "active": "#E04E00"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "border": {
+      "default": "#27272A",
+      "focus": "#FF5A00"
+    },
+    "status": {
+      "concert": "#FF5A00",
+      "spectacle": "#FACC15",
+      "residence": "#38BDF8",
+      "confirmed": "#22C55E",
+      "option": "#F59E0B",
+      "cancelled": "#EF4444"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "'Cabinet Grotesk', sans-serif",
+      "body": "'IBM Plex Sans', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "import_links": [
+      "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,500,700,400,900&display=swap",
+      "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    ],
+    "scale": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-bold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm tracking-wide uppercase"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "max-w-[1440px] mx-auto px-6 md:px-12",
+    "sections": "py-12",
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "cards": "p-6 rounded-none border border-zinc-800 bg-[#121215]",
+    "radius": "rounded-none"
+  },
+  "components": {
+    "buttons": "rounded-none font-bold uppercase tracking-widest text-sm px-6 py-3 transition-colors",
+    "tabs": "flex gap-8 border-b border-zinc-800 pb-2. Active tab has border-b-2 border-[#FF5A00] text-white. Inactive is text-zinc-500 hover:text-zinc-300.",
+    "inputs": "bg-[#1C1C21] border border-zinc-800 rounded-none focus:ring-1 focus:ring-[#FF5A00] focus:border-[#FF5A00] text-white p-3",
+    "calendar": "Custom grid layout, full width, using status colors for events. Edge-to-edge styling, minimal borders.",
+    "data_display": "Dense tabular layout with monospace numbers for budgets/cachets."
+  },
+  "image_urls": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1774988353278-b01caf489c4e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwyfHxjb25jZXJ0JTIwc3RhZ2UlMjBsaWdodHMlMjBkYXJrfGVufDB8fHx8MTc3Njk1NjQ2OHww&ixlib=rb-4.1.0&q=85",
+      "description": "Warm stage lights in dark venue"
+    },
+    "artists": [
+      {
+        "url": "https://images.unsplash.com/photo-1719353128335-725362ed1c55?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxtdXNpY2lhbiUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzY5ODc4Mzd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "B/W photo of man"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1771894429175-c0b6a809e30f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHw0fHxtdXNpY2lhbiUyMHBvcnRyYWl0JTIwZGFya3xlbnwwfHx8fDE3NzY5ODc4Mzd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Man holding black guitar"
+      }
+    ],
+    "venues": [
+      {
+        "url": "https://images.unsplash.com/photo-1760170437237-a3654545ab4c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwyfHxlbXB0eSUyMHRoZWF0ZXIlMjBzdGFnZXxlbnwwfHx8fDE3NzY5ODc4Mzd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Vintage cinema hall"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1761618291331-535983ae4296?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwzfHxlbXB0eSUyMHRoZWF0ZXIlMjBzdGFnZXxlbnwwfHx8fDE3NzY5ODc4Mzd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Stage performance with audience"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Create a 2-page app layout: Dashboard (with Tabs) and separate Calendar route.",
+    "Use ONLY JavaScript (.js/.jsx) files. Do not use TypeScript (.tsx).",
+    "Dashboard Tabs should include: Artistes, Lieux, Événements, Résidences.",
+    "Add font imports to the main CSS/HTML for Cabinet Grotesk, IBM Plex Sans, and JetBrains Mono.",
+    "Apply global styling for a Dark theme by default on the body (`bg-[#0A0A0C] text-white`).",
+    "Numbers, currencies (cachets), and dates must use JetBrains Mono font.",
+    "Do NOT use standard rounded cards. Use `rounded-none`, thin `border-zinc-800` borders, and flat backgrounds (`bg-[#121215]`) for all containers to enforce the brutalist/editorial aesthetic.",
+    "Calendar should highlight different event types using the status colors provided (Orange for concert, Yellow for spectacle, Blue for residence).",
+    "Include placeholder dummy data populated with the provided image URLs.",
+    "Ensure all buttons, form inputs, and interactive elements have valid `data-testid` attributes.",
+    "Implement an upload UI area using a dashed border (`border-dashed border-zinc-700 hover:border-[#FF5A00]`) for PDFs/Images.",
+    "The entire application text and labels must be in French."
+  ]
+}
