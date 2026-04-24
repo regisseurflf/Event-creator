@@ -9,8 +9,9 @@
   "scripts": {
     "electron:dev": "electron .",
     "frontend:build": "cd frontend && npm run build",
-    "dist": "npm run frontend:build && electron-builder --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "dist": "bash build-backend.sh && npm run frontend:build && electron-builder --mac",
+    "postinstall": "electron-builder install-app-deps",
+    "backend:build": "bash build-backend.sh"
   },
   "devDependencies": {
     "electron": "^29.0.0",
@@ -22,7 +23,13 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "icon": "electron/assets/icon.icns"
     },
@@ -37,7 +44,9 @@
       {
         "from": "dist/backend/",
         "to": "backend/",
-        "filter": ["lampli-server"]
+        "filter": [
+          "lampli-server"
+        ]
       }
     ],
     "asar": true

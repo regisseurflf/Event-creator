@@ -22,7 +22,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / '.env', override=False)  # silently ignored if absent in packaged app
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(
