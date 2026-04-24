@@ -705,12 +705,29 @@ function ShareDialog() {
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(publicUrl);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(publicUrl);
+      } else {
+        throw new Error("no clipboard api");
+      }
       setCopied(true);
       toast.success("Lien copié");
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Impossible de copier");
+      // Fallback: select the input and execCommand copy
+      try {
+        const input = document.querySelector('[data-testid="share-url"]');
+        if (input) {
+          input.focus();
+          input.select();
+          document.execCommand("copy");
+          setCopied(true);
+          toast.success("Lien copié");
+          setTimeout(() => setCopied(false), 2000);
+          return;
+        }
+      } catch {}
+      toast.error("Copie impossible — sélectionnez le lien manuellement");
     }
   };
 

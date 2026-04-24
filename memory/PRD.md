@@ -32,6 +32,13 @@ Un·e programmateur·rice culturel·le gérant personnellement une saison : conc
 - [x] Dashboard avec 4 onglets (Événements, Résidences, Artistes, Lieux)
 - [x] Page Calendrier séparée (vue mois, nav prev/next/today)
 
+## What's Been Implemented (v1.3 — Feb 2026)
+- [x] **Artistes** et **Lieux** dans la barre de navigation (même ligne que Dashboard et Calendrier) ; routes `/artistes` et `/lieux`
+- [x] **Fusion des résidences** avec concerts et spectacles : un seul onglet Événements, filtre type étendu à Résidence
+- [x] **Correction bug PDF page blanche** : `openRoadmap()` fetch le PDF en blob et l'ouvre via `window.open(blob URL)` pour contourner la navigation directe bloquée par certains navigateurs
+- [x] **Lien public lecture seule** : endpoint `/api/public/token` avec rotation, `/api/public/{token}/calendar` (documents privés masqués), `/api/public/{token}/events/{id}/roadmap.pdf` ; dialog « Partager » dans Calendrier ; route `/public/:token` en lecture seule (mois/semaine/jour/agenda, pas de DnD ni d'édition)
+- [x] Tests : 100 % backend (26/26 pytest) + 100 % frontend
+
 ## What's Been Implemented (v1.2 — Feb 2026)
 - [x] Dashboard épuré : H1 « Planificateur d'événements », suppression du bandeau « Poste de régie », de la baseline, du stat bar et de la mention « Vue d'ensemble en direct »
 - [x] **Vue Agenda** (4ᵉ vue du calendrier) : événements du mois groupés par jour, export PDF par événement
