@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, fileUrl } from "@/lib/api";
 import FileUpload from "@/components/FileUpload";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -18,8 +18,8 @@ export default function ArtistsTab({ onMutate }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.get("/artists").then((r) => setItems(r.data));
-  useEffect(() => { load(); }, []);
+  const load = useCallback(() => api.get("/artists").then((r) => setItems(r.data)), []);
+  useEffect(() => { load(); }, [load]);
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
   const openEdit = (a) => {

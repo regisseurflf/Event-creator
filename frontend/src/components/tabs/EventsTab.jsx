@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, fileUrl, openRoadmap } from "@/lib/api";
 import EventForm from "@/components/EventForm";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ export default function EventsTab({ onMutate }) {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [e, a, v] = await Promise.all([
       api.get("/events"),
       api.get("/artists"),
@@ -33,9 +33,9 @@ export default function EventsTab({ onMutate }) {
     setItems(e.data);
     setArtists(a.data);
     setVenues(v.data);
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const venueById = useMemo(() => Object.fromEntries(venues.map((v) => [v.id, v])), [venues]);
   const artistById = useMemo(() => Object.fromEntries(artists.map((a) => [a.id, a])), [artists]);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, API, openRoadmap } from "@/lib/api";
 import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Radio, AlertCircle } from "lucide-react";
@@ -33,6 +33,9 @@ const startOfWeek = (d) => {
   return addDays(r, -dow);
 };
 
+const isSameDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
 export default function PublicCalendar() {
   const { token } = useParams();
   const today = new Date();
@@ -48,11 +51,11 @@ export default function PublicCalendar() {
       .catch(() => setError("Lien public invalide ou expiré"));
   }, [token]);
 
-  const events = data?.events || [];
+  const events = useMemo(() => data?.events || [], [data]);
   const venueById = useMemo(() => Object.fromEntries((data?.venues || []).map((v) => [v.id, v])), [data]);
   const artistById = useMemo(() => Object.fromEntries((data?.artists || []).map((a) => [a.id, a])), [data]);
 
-  const eventsForDay = (date) => {
+  const eventsForDay = useCallback((date) => {
     const target = ymd(date);
     return events.filter((e) => {
       if (!e.start_date) return false;
@@ -60,10 +63,7 @@ export default function PublicCalendar() {
       const end = (e.end_date || e.start_date).slice(0, 10);
       return target >= s && target <= end;
     });
-  };
-
-  const isSameDay = (a, b) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }, [events]);
 
   const headerTitle = useMemo(() => {
     if (view === "month" || view === "agenda") return { main: MONTHS[cursor.getMonth()], sub: cursor.getFullYear() };
@@ -265,12 +265,12 @@ function MonthRO({ cursor, today, selectedDate, setSelectedDate, eventsForDay, i
         {WEEKDAYS_SHORT.map((d) => <div key={d} className="p-3 label-mono text-center border-r border-zinc-800 last:border-r-0">{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
-        {days.map(({ date, out }, i) => {
+        {days.map(({ date, out }) => {
           const evs = eventsForDay(date);
           const isToday = isSameDay(date, today);
           const isSelected = selectedDate && isSameDay(date, selectedDate);
           return (
-            <div key={i} onClick={() => setSelectedDate(date)}
+            <div key={ymd(date)} onClick={() => setSelectedDate(date)}
               className={`cal-day text-left cursor-pointer ${out ? "out" : ""} ${isToday ? "today" : ""} ${isSelected ? "bg-[#17171c]" : ""}`}>
               <div className="flex items-center justify-between mb-1.5">
                 <span className={`font-mono tabular-nums text-sm ${out ? "text-zinc-600" : isToday ? "text-[#FF5A00] font-bold" : "text-zinc-300"}`}>
@@ -299,7 +299,7 @@ function WeekRO({ cursor, today, selectedDate, setSelectedDate, eventsForDay, is
         {days.map((d, i) => {
           const isToday = isSameDay(d, today);
           return (
-            <div key={i} className={`p-3 border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-[#1C1C21]" : ""}`}>
+            <div key={ymd(d)} className={`p-3 border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-[#1C1C21]" : ""}`}>
               <div className="label-mono">{WEEKDAYS_SHORT[i]}</div>
               <div className={`font-mono tabular-nums text-xl ${isToday ? "text-[#FF5A00] font-bold" : "text-white"}`}>{String(d.getDate()).padStart(2, "0")}</div>
             </div>
@@ -307,11 +307,11 @@ function WeekRO({ cursor, today, selectedDate, setSelectedDate, eventsForDay, is
         })}
       </div>
       <div className="grid grid-cols-7 min-h-[400px]">
-        {days.map((d, i) => {
+        {days.map((d) => {
           const evs = eventsForDay(d);
           const isSelected = selectedDate && isSameDay(d, selectedDate);
           return (
-            <div key={i} onClick={() => setSelectedDate(d)} className={`p-3 border-r border-zinc-800 last:border-r-0 cursor-pointer min-h-[400px] ${isSelected ? "bg-[#17171c]" : "hover:bg-[#15151a]"}`}>
+            <div key={ymd(d)} onClick={() => setSelectedDate(d)} className={`p-3 border-r border-zinc-800 last:border-r-0 cursor-pointer min-h-[400px] ${isSelected ? "bg-[#17171c]" : "hover:bg-[#15151a]"}`}>
               <div className="space-y-1.5">
                 {evs.length === 0 && <div className="label-mono text-[9px]">—</div>}
                 {evs.map((ev) => <ChipRO key={ev.id} ev={ev} />)}

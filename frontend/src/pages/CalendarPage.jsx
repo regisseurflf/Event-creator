@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, API, openRoadmap } from "@/lib/api";
 import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Move, Download, List, Share2, RotateCw, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,9 @@ const startOfWeek = (d) => {
   return addDays(r, -dow);
 };
 
+const isSameDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
 export default function CalendarPage() {
   const today = new Date();
   const [view, setView] = useState("month"); // month | week | day | agenda
@@ -51,7 +54,7 @@ export default function CalendarPage() {
   const [artists, setArtists] = useState([]);
   const [selectedDate, setSelectedDate] = useState(today);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const [e, v, a] = await Promise.all([
       api.get("/events"),
       api.get("/venues"),
@@ -60,14 +63,14 @@ export default function CalendarPage() {
     setEvents(e.data);
     setVenues(v.data);
     setArtists(a.data);
-  };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const venueById = useMemo(() => Object.fromEntries(venues.map((v) => [v.id, v])), [venues]);
   const artistById = useMemo(() => Object.fromEntries(artists.map((a) => [a.id, a])), [artists]);
 
-  const eventsForDay = (date) => {
+  const eventsForDay = useCallback((date) => {
     const target = ymd(date);
     return events.filter((e) => {
       if (!e.start_date) return false;
@@ -75,10 +78,7 @@ export default function CalendarPage() {
       const end = (e.end_date || e.start_date).slice(0, 10);
       return target >= s && target <= end;
     });
-  };
-
-  const isSameDay = (a, b) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }, [events]);
 
   const headerTitle = useMemo(() => {
     if (view === "month" || view === "agenda") {
@@ -121,7 +121,32 @@ export default function CalendarPage() {
   // -------- Touch & mouse compatible drag via Pointer Events --------
   const dragRef = useRef(null);
 
-  const startDrag = (e, eventId) => {
+  const moveEvent = useCallback(async (id, targetDate) => {
+    const source = events.find((x) => x.id === id);
+    if (!source) return;
+    const oldStart = parseYMD(source.start_date);
+    if (!oldStart) return;
+    const deltaDays = Math.round((targetDate - oldStart) / 86400000);
+    if (deltaDays === 0) return;
+    const newStart = ymd(addDays(oldStart, deltaDays));
+    let newEnd = null;
+    if (source.end_date) {
+      const oldEnd = parseYMD(source.end_date);
+      if (oldEnd) newEnd = ymd(addDays(oldEnd, deltaDays));
+    }
+    const prev = events;
+    setEvents((arr) => arr.map((x) => (x.id === id ? { ...x, start_date: newStart, end_date: newEnd } : x)));
+    try {
+      await api.patch(`/events/${id}/dates`, { start_date: newStart, end_date: newEnd });
+      toast.success("Événement déplacé");
+    } catch (err) {
+      console.error("move event failed", err);
+      setEvents(prev);
+      toast.error("Impossible de déplacer l'événement");
+    }
+  }, [events]);
+
+  const startDrag = useCallback((e, eventId) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -129,15 +154,10 @@ export default function CalendarPage() {
     const bg = getComputedStyle(e.currentTarget).backgroundColor;
     const color = getComputedStyle(e.currentTarget).color;
 
-    const state = {
-      id: eventId,
-      startX: e.clientX,
-      startY: e.clientY,
-      moved: false,
-      ghost: null,
-      label, bg, color,
+    dragRef.current = {
+      id: eventId, startX: e.clientX, startY: e.clientY,
+      moved: false, ghost: null, label, bg, color,
     };
-    dragRef.current = state;
 
     const onMove = (ev) => {
       const s = dragRef.current;
@@ -162,7 +182,6 @@ export default function CalendarPage() {
       if (s.moved && s.ghost) {
         s.ghost.style.left = ev.clientX + "px";
         s.ghost.style.top = ev.clientY + "px";
-        // highlight drop target
         const el = document.elementFromPoint(ev.clientX, ev.clientY);
         const cell = el && el.closest ? el.closest("[data-dropdate]") : null;
         document.querySelectorAll("[data-dropdate].drop-hot").forEach((x) => x.classList.remove("drop-hot"));
@@ -192,31 +211,7 @@ export default function CalendarPage() {
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
-  };
-
-  const moveEvent = async (id, targetDate) => {
-    const source = events.find((x) => x.id === id);
-    if (!source) return;
-    const oldStart = parseYMD(source.start_date);
-    if (!oldStart) return;
-    const deltaDays = Math.round((targetDate - oldStart) / 86400000);
-    if (deltaDays === 0) return;
-    const newStart = ymd(addDays(oldStart, deltaDays));
-    let newEnd = null;
-    if (source.end_date) {
-      const oldEnd = parseYMD(source.end_date);
-      if (oldEnd) newEnd = ymd(addDays(oldEnd, deltaDays));
-    }
-    const prev = events;
-    setEvents((arr) => arr.map((x) => (x.id === id ? { ...x, start_date: newStart, end_date: newEnd } : x)));
-    try {
-      await api.patch(`/events/${id}/dates`, { start_date: newStart, end_date: newEnd });
-      toast.success("Événement déplacé");
-    } catch {
-      setEvents(prev);
-      toast.error("Impossible de déplacer l'événement");
-    }
-  };
+  }, [moveEvent]);
 
   const selectedEvents = selectedDate ? eventsForDay(selectedDate) : [];
 
@@ -434,13 +429,13 @@ function MonthView({ cursor, today, selectedDate, setSelectedDate, eventsForDay,
         ))}
       </div>
       <div className="grid grid-cols-7">
-        {days.map(({ date, out }, i) => {
+        {days.map(({ date, out }) => {
           const evs = eventsForDay(date);
           const isToday = isSameDay(date, today);
           const isSelected = selectedDate && isSameDay(date, selectedDate);
           return (
             <div
-              key={i}
+              key={ymd(date)}
               onClick={() => setSelectedDate(date)}
               data-dropdate={ymd(date)}
               data-testid={`cal-day-${ymd(date)}`}
@@ -474,7 +469,7 @@ function WeekView({ cursor, today, selectedDate, setSelectedDate, eventsForDay, 
         {days.map((d, i) => {
           const isToday = isSameDay(d, today);
           return (
-            <div key={i} className={`p-3 border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-[#1C1C21]" : ""}`}>
+            <div key={ymd(d)} className={`p-3 border-r border-zinc-800 last:border-r-0 ${isToday ? "bg-[#1C1C21]" : ""}`}>
               <div className="label-mono">{WEEKDAYS_SHORT[i]}</div>
               <div className={`font-mono tabular-nums text-xl ${isToday ? "text-[#FF5A00] font-bold" : "text-white"}`}>
                 {String(d.getDate()).padStart(2, "0")}
@@ -484,12 +479,12 @@ function WeekView({ cursor, today, selectedDate, setSelectedDate, eventsForDay, 
         })}
       </div>
       <div className="grid grid-cols-7 min-h-[400px]">
-        {days.map((d, i) => {
+        {days.map((d) => {
           const evs = eventsForDay(d);
           const isSelected = selectedDate && isSameDay(d, selectedDate);
           return (
             <div
-              key={i}
+              key={ymd(d)}
               onClick={() => setSelectedDate(d)}
               data-dropdate={ymd(d)}
               data-testid={`week-day-${ymd(d)}`}
@@ -726,7 +721,9 @@ function ShareDialog() {
           setTimeout(() => setCopied(false), 2000);
           return;
         }
-      } catch {}
+      } catch (fallbackErr) {
+        console.warn("Clipboard fallback failed", fallbackErr);
+      }
       toast.error("Copie impossible — sélectionnez le lien manuellement");
     }
   };

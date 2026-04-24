@@ -396,12 +396,121 @@ def _fmt_date(iso: Optional[str]) -> str:
     return f"{d.day:02d} {months[d.month - 1]} {d.year}"
 
 
-@api_router.get("/events/{event_id}/roadmap.pdf")
-async def event_roadmap_pdf(event_id: str):
+# ---- PDF helpers ----
+PDF_BLACK = colors.HexColor("#0A0A0C")
+PDF_ORANGE = colors.HexColor("#FF5A00")
+PDF_GREY = colors.HexColor("#71717A")
+PDF_RULE = colors.HexColor("#E4E4E7")
+
+
+def _pdf_styles():
+    styles = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle("t", parent=styles["Title"], fontName="Helvetica-Bold",
+                                fontSize=24, leading=28, textColor=PDF_BLACK, spaceAfter=2),
+        "sub": ParagraphStyle("s", parent=styles["Normal"], fontName="Helvetica",
+                              fontSize=9, textColor=PDF_GREY, leading=12, spaceAfter=10),
+        "h2": ParagraphStyle("h2", parent=styles["Heading2"], fontName="Helvetica-Bold",
+                             fontSize=11, textColor=PDF_BLACK, leading=14,
+                             spaceBefore=10, spaceAfter=6),
+        "body": ParagraphStyle("b", parent=styles["Normal"], fontName="Helvetica",
+                               fontSize=10, textColor=PDF_BLACK, leading=14),
+        "meta": ParagraphStyle("m", parent=styles["Normal"], fontName="Helvetica",
+                               fontSize=9, textColor=PDF_GREY, leading=12),
+    }
+
+
+def _pdf_rule(width_mm: float, thickness: int, color) -> Table:
+    t = Table([[""]], colWidths=[width_mm * mm], rowHeights=[thickness])
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), color)]))
+    return t
+
+
+def _pdf_info_table(event: dict, venue: Optional[dict], artists: list, styles: dict) -> Table:
+    rows = [["DATE", _fmt_date(event.get("start_date"))]]
+    if event.get("end_date") and event["end_date"] != event.get("start_date"):
+        rows.append(["FIN", _fmt_date(event["end_date"])])
+    if venue:
+        line = venue["name"]
+        if venue.get("address"):
+            line += f"<br/><font color='#71717A' size='9'>{venue['address']}</font>"
+        if venue.get("capacity"):
+            line += (f"<br/><font color='#71717A' size='9'>"
+                     f"Jauge : {venue['capacity']} · Scène : {venue.get('stage_type') or '—'}</font>")
+        rows.append(["LIEU", Paragraph(line, styles["body"])])
+    else:
+        rows.append(["LIEU", "À définir"])
+    if artists:
+        rows.append(["ARTISTES", ", ".join(a["name"] for a in artists)])
+    table = Table(rows, colWidths=[32 * mm, 138 * mm])
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("TEXTCOLOR", (0, 0), (0, -1), PDF_GREY),
+        ("TEXTCOLOR", (1, 0), (1, -1), PDF_BLACK),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, PDF_RULE),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
+def _pdf_artist_block(a: dict) -> str:
+    block = f"<b>{a['name']}</b>"
+    if a.get("genre"):
+        block += f" &nbsp;<font color='#71717A' size='9'>· {a['genre']}</font>"
+    if a.get("bio"):
+        block += f"<br/>{a['bio']}"
+    if a.get("website"):
+        block += f"<br/><font color='#FF5A00'>{a['website']}</font>"
+    if a.get("social_links"):
+        block += f"<br/><font color='#71717A' size='9'>{a['social_links']}</font>"
+    return block
+
+
+def _build_roadmap_story(event: dict, venue: Optional[dict], artists: list) -> list:
+    styles = _pdf_styles()
+    story = []
+    story.append(Paragraph("FEUILLE DE ROUTE · L'AMPLI", styles["sub"]))
+    story.append(Paragraph(event["title"], styles["title"]))
+    story.append(Paragraph(
+        f"{TYPE_LABEL_FR.get(event['type'], event['type']).upper()} &nbsp;·&nbsp; "
+        f"Statut : {STATUS_LABEL_FR.get(event['status'], event['status'])}",
+        styles["sub"],
+    ))
+    story.append(_pdf_rule(170, 2, PDF_ORANGE))
+    story.append(Spacer(1, 10))
+    story.append(_pdf_info_table(event, venue, artists, styles))
+    story.append(Spacer(1, 14))
+
+    if artists:
+        story.append(Paragraph("FICHES ARTISTES", styles["h2"]))
+        for a in artists:
+            story.append(Paragraph(_pdf_artist_block(a), styles["body"]))
+            story.append(Spacer(1, 8))
+    if venue and venue.get("notes"):
+        story.append(Paragraph("LOGES / BACKLINE / ACCUEIL", styles["h2"]))
+        story.append(Paragraph(venue["notes"].replace("\n", "<br/>"), styles["body"]))
+    if event.get("notes"):
+        story.append(Paragraph("NOTES DE PRODUCTION", styles["h2"]))
+        story.append(Paragraph(event["notes"].replace("\n", "<br/>"), styles["body"]))
+
+    story.append(Spacer(1, 18))
+    story.append(_pdf_rule(170, 1, PDF_RULE))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        f"Générée le {_fmt_date(datetime.now(timezone.utc).isoformat())} · L'Ampli",
+        styles["meta"],
+    ))
+    return story
+
+
+async def _load_event_context(event_id: str):
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Événement introuvable")
-
     venue = None
     if event.get("venue_id"):
         venue = await db.venues.find_one({"id": event["venue_id"]}, {"_id": 0})
@@ -409,7 +518,10 @@ async def event_roadmap_pdf(event_id: str):
     if event.get("artist_ids"):
         async for a in db.artists.find({"id": {"$in": event["artist_ids"]}}, {"_id": 0}):
             artists.append(a)
+    return event, venue, artists
 
+
+def _render_pdf(event: dict, story: list) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -417,112 +529,17 @@ async def event_roadmap_pdf(event_id: str):
         topMargin=18 * mm, bottomMargin=18 * mm,
         title=f"Feuille de route — {event['title']}",
     )
-
-    styles = getSampleStyleSheet()
-    BLACK = colors.HexColor("#0A0A0C")
-    ORANGE = colors.HexColor("#FF5A00")
-    GREY = colors.HexColor("#71717A")
-
-    title_style = ParagraphStyle("t", parent=styles["Title"], fontName="Helvetica-Bold",
-                                 fontSize=24, leading=28, textColor=BLACK, spaceAfter=2)
-    sub_style = ParagraphStyle("s", parent=styles["Normal"], fontName="Helvetica",
-                               fontSize=9, textColor=GREY, leading=12, spaceAfter=10,
-                               letterSpace=0.5)
-    h2_style = ParagraphStyle("h2", parent=styles["Heading2"], fontName="Helvetica-Bold",
-                              fontSize=11, textColor=BLACK, leading=14,
-                              spaceBefore=10, spaceAfter=6)
-    body_style = ParagraphStyle("b", parent=styles["Normal"], fontName="Helvetica",
-                                fontSize=10, textColor=BLACK, leading=14)
-    meta_style = ParagraphStyle("m", parent=styles["Normal"], fontName="Helvetica",
-                                fontSize=9, textColor=GREY, leading=12)
-
-    story = []
-    story.append(Paragraph("FEUILLE DE ROUTE · L'AMPLI", sub_style))
-    story.append(Paragraph(event["title"], title_style))
-    story.append(Paragraph(
-        f"{TYPE_LABEL_FR.get(event['type'], event['type']).upper()} &nbsp;·&nbsp; "
-        f"Statut : {STATUS_LABEL_FR.get(event['status'], event['status'])}",
-        sub_style,
-    ))
-
-    # Horizontal rule
-    rule = Table([[""]], colWidths=[170 * mm], rowHeights=[2])
-    rule.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), ORANGE)]))
-    story.append(rule)
-    story.append(Spacer(1, 10))
-
-    # Key info table
-    info_rows = [
-        ["DATE", _fmt_date(event.get("start_date"))],
-    ]
-    if event.get("end_date") and event["end_date"] != event.get("start_date"):
-        info_rows.append(["FIN", _fmt_date(event["end_date"])])
-    if venue:
-        venue_line = venue["name"]
-        if venue.get("address"):
-            venue_line += f"<br/><font color='#71717A' size='9'>{venue['address']}</font>"
-        if venue.get("capacity"):
-            venue_line += f"<br/><font color='#71717A' size='9'>Jauge : {venue['capacity']} · Scène : {venue.get('stage_type') or '—'}</font>"
-        info_rows.append(["LIEU", Paragraph(venue_line, body_style)])
-    else:
-        info_rows.append(["LIEU", "À définir"])
-
-    if artists:
-        artist_names = ", ".join(a["name"] for a in artists)
-        info_rows.append(["ARTISTES", artist_names])
-
-    info_table = Table(info_rows, colWidths=[32 * mm, 138 * mm])
-    info_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("TEXTCOLOR", (0, 0), (0, -1), GREY),
-        ("TEXTCOLOR", (1, 0), (1, -1), BLACK),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#E4E4E7")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    story.append(info_table)
-    story.append(Spacer(1, 14))
-
-    if artists:
-        story.append(Paragraph("FICHES ARTISTES", h2_style))
-        for a in artists:
-            block = f"<b>{a['name']}</b>"
-            if a.get("genre"):
-                block += f" &nbsp;<font color='#71717A' size='9'>· {a['genre']}</font>"
-            if a.get("bio"):
-                block += f"<br/>{a['bio']}"
-            if a.get("website"):
-                block += f"<br/><font color='#FF5A00'>{a['website']}</font>"
-            if a.get("social_links"):
-                block += f"<br/><font color='#71717A' size='9'>{a['social_links']}</font>"
-            story.append(Paragraph(block, body_style))
-            story.append(Spacer(1, 8))
-
-    if venue and venue.get("notes"):
-        story.append(Paragraph("LOGES / BACKLINE / ACCUEIL", h2_style))
-        story.append(Paragraph(venue["notes"].replace("\n", "<br/>"), body_style))
-
-    if event.get("notes"):
-        story.append(Paragraph("NOTES DE PRODUCTION", h2_style))
-        story.append(Paragraph(event["notes"].replace("\n", "<br/>"), body_style))
-
-    # Footer rule
-    story.append(Spacer(1, 18))
-    frule = Table([[""]], colWidths=[170 * mm], rowHeights=[1])
-    frule.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E4E4E7"))]))
-    story.append(frule)
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(
-        f"Générée le {_fmt_date(datetime.now(timezone.utc).isoformat())} · L'Ampli",
-        meta_style,
-    ))
-
     doc.build(story)
     pdf = buf.getvalue()
     buf.close()
+    return pdf
+
+
+@api_router.get("/events/{event_id}/roadmap.pdf")
+async def event_roadmap_pdf(event_id: str):
+    event, venue, artists = await _load_event_context(event_id)
+    story = _build_roadmap_story(event, venue, artists)
+    pdf = _render_pdf(event, story)
     safe_title = "".join(c if c.isalnum() else "_" for c in event["title"])[:60]
     return Response(
         content=pdf,
@@ -558,24 +575,10 @@ def _ics_fold(line: str) -> str:
     return "\r\n ".join(out)
 
 
-@api_router.get("/export/events.ics")
-async def export_ics(
-    type: Optional[str] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-):
-    """Export events as iCalendar (.ics). Filters: type, start (YYYY-MM-DD), end (YYYY-MM-DD)."""
-    query = {}
-    if type:
-        query["type"] = type
-    if start:
-        _validate_iso_date(start)
-    if end:
-        _validate_iso_date(end)
+ICS_STATUS_MAP = {"cancelled": "CANCELLED", "confirmed": "CONFIRMED"}
 
-    items = await db.events.find(query, {"_id": 0}).sort("start_date", 1).to_list(5000)
 
-    # In-python range filter (start_date strings are YYYY-MM-DD prefix)
+def _ics_filter_items(items: list, start: Optional[str], end: Optional[str]) -> list:
     def in_range(e):
         s = (e.get("start_date") or "")[:10]
         ed = (e.get("end_date") or e.get("start_date") or "")[:10]
@@ -584,10 +587,10 @@ async def export_ics(
         if end and s > end:
             return False
         return True
+    return [e for e in items if in_range(e)]
 
-    items = [e for e in items if in_range(e)]
 
-    # Preload artists & venues for SUMMARY/LOCATION
+async def _ics_load_related(items: list):
     venue_ids = list({e["venue_id"] for e in items if e.get("venue_id")})
     artist_ids = list({a for e in items for a in (e.get("artist_ids") or [])})
     venues_map = {
@@ -596,6 +599,98 @@ async def export_ics(
     artists_map = {
         a["id"]: a async for a in db.artists.find({"id": {"$in": artist_ids}}, {"_id": 0})
     } if artist_ids else {}
+    return venues_map, artists_map
+
+
+def _ics_event_dates(e: dict):
+    try:
+        s_date = date_cls.fromisoformat(e["start_date"][:10])
+    except Exception:
+        return None, None
+    end_raw = (e.get("end_date") or e["start_date"])[:10]
+    try:
+        e_date = date_cls.fromisoformat(end_raw)
+    except Exception:
+        e_date = s_date
+    return s_date, (e_date + timedelta(days=1))
+
+
+def _ics_summary_and_description(e: dict, artists_map: dict) -> tuple:
+    type_label = TYPE_LABEL_FR.get(e.get("type", ""), e.get("type", "")).upper()
+    artists_names = [
+        artists_map[a]["name"] for a in (e.get("artist_ids") or []) if a in artists_map
+    ]
+    summary = f"{type_label} · {e.get('title', '')}"
+    if artists_names:
+        summary += " — " + ", ".join(artists_names)
+    desc_bits = []
+    if e.get("status"):
+        desc_bits.append(f"Statut: {STATUS_LABEL_FR.get(e['status'], e['status'])}")
+    if artists_names:
+        desc_bits.append("Artistes: " + ", ".join(artists_names))
+    if e.get("notes"):
+        desc_bits.append(e["notes"])
+    return type_label, summary, "\n".join(desc_bits)
+
+
+def _ics_location(e: dict, venues_map: dict) -> str:
+    v = venues_map.get(e.get("venue_id"))
+    if not v:
+        return ""
+    location = v["name"]
+    if v.get("address"):
+        location += ", " + v["address"]
+    return location
+
+
+def _build_vevent(e: dict, now_stamp: str, venues_map: dict, artists_map: dict) -> list:
+    s_date, end_exclusive = _ics_event_dates(e)
+    if s_date is None:
+        return []
+    type_label, summary, description = _ics_summary_and_description(e, artists_map)
+    location = _ics_location(e, venues_map)
+    lines = [
+        "BEGIN:VEVENT",
+        f"UID:{e['id']}@lampli",
+        f"DTSTAMP:{now_stamp}",
+        f"DTSTART;VALUE=DATE:{s_date.strftime('%Y%m%d')}",
+        f"DTEND;VALUE=DATE:{end_exclusive.strftime('%Y%m%d')}",
+        f"SUMMARY:{_ics_escape(summary)}",
+    ]
+    if location:
+        lines.append(f"LOCATION:{_ics_escape(location)}")
+    if description:
+        lines.append(f"DESCRIPTION:{_ics_escape(description)}")
+    lines.append(f"STATUS:{ICS_STATUS_MAP.get(e.get('status'), 'TENTATIVE')}")
+    lines.append(f"CATEGORIES:{type_label}")
+    lines.append("END:VEVENT")
+    return [_ics_fold(ln) for ln in lines]
+
+
+def _ics_filename(type: Optional[str], start: Optional[str], end: Optional[str]) -> str:
+    parts = ["lampli"]
+    for p in (type, start, end):
+        if p:
+            parts.append(p)
+    return "_".join(parts) + ".ics"
+
+
+@api_router.get("/export/events.ics")
+async def export_ics(
+    type: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
+    """Export events as iCalendar (.ics). Filters: type, start (YYYY-MM-DD), end (YYYY-MM-DD)."""
+    if start:
+        _validate_iso_date(start)
+    if end:
+        _validate_iso_date(end)
+
+    query = {"type": type} if type else {}
+    raw = await db.events.find(query, {"_id": 0}).sort("start_date", 1).to_list(5000)
+    items = _ics_filter_items(raw, start, end)
+    venues_map, artists_map = await _ics_load_related(items)
 
     now_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = [
@@ -606,83 +701,15 @@ async def export_ics(
         "METHOD:PUBLISH",
         "X-WR-CALNAME:L'Ampli",
     ]
-
     for e in items:
-        try:
-            s_date = date_cls.fromisoformat(e["start_date"][:10])
-        except Exception:
-            continue
-        end_raw = (e.get("end_date") or e["start_date"])[:10]
-        try:
-            e_date = date_cls.fromisoformat(end_raw)
-        except Exception:
-            e_date = s_date
-        dtstart = s_date.strftime("%Y%m%d")
-        dtend_exclusive = (e_date + timedelta(days=1)).strftime("%Y%m%d")
-
-        type_label = TYPE_LABEL_FR.get(e.get("type", ""), e.get("type", "")).upper()
-        summary_parts = [type_label, "·", e.get("title", "")]
-        artists_names = [
-            artists_map[a]["name"] for a in (e.get("artist_ids") or []) if a in artists_map
-        ]
-        if artists_names:
-            summary_parts.append("—")
-            summary_parts.append(", ".join(artists_names))
-        summary = " ".join(summary_parts)
-
-        location = ""
-        v = venues_map.get(e.get("venue_id"))
-        if v:
-            location = v["name"]
-            if v.get("address"):
-                location += ", " + v["address"]
-
-        desc_bits = []
-        if e.get("status"):
-            desc_bits.append(f"Statut: {STATUS_LABEL_FR.get(e['status'], e['status'])}")
-        if artists_names:
-            desc_bits.append("Artistes: " + ", ".join(artists_names))
-        if e.get("notes"):
-            desc_bits.append(e["notes"])
-        description = "\n".join(desc_bits)
-
-        uid = f"{e['id']}@lampli"
-        ev_lines = [
-            "BEGIN:VEVENT",
-            f"UID:{uid}",
-            f"DTSTAMP:{now_stamp}",
-            f"DTSTART;VALUE=DATE:{dtstart}",
-            f"DTEND;VALUE=DATE:{dtend_exclusive}",
-            f"SUMMARY:{_ics_escape(summary)}",
-        ]
-        if location:
-            ev_lines.append(f"LOCATION:{_ics_escape(location)}")
-        if description:
-            ev_lines.append(f"DESCRIPTION:{_ics_escape(description)}")
-        if e.get("status") == "cancelled":
-            ev_lines.append("STATUS:CANCELLED")
-        elif e.get("status") == "confirmed":
-            ev_lines.append("STATUS:CONFIRMED")
-        else:
-            ev_lines.append("STATUS:TENTATIVE")
-        ev_lines.append(f"CATEGORIES:{type_label}")
-        ev_lines.append("END:VEVENT")
-        lines.extend(_ics_fold(line) for line in ev_lines)
-
+        lines.extend(_build_vevent(e, now_stamp, venues_map, artists_map))
     lines.append("END:VCALENDAR")
+
     body = "\r\n".join(lines) + "\r\n"
-    filename = "lampli"
-    if type:
-        filename += f"_{type}"
-    if start:
-        filename += f"_{start}"
-    if end:
-        filename += f"_{end}"
-    filename += ".ics"
     return Response(
         content=body,
         media_type="text/calendar; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{_ics_filename(type, start, end)}"'},
     )
 
 

@@ -444,3 +444,87 @@ class TestPublicShare:
         assert r.status_code == 404
         client.delete(f"{API}/events/{eid}")
 
+
+# ------- v1.4: regression after refactor (helpers for PDF + ICS) -------
+class TestV14Refactor:
+    def test_ics_content_disposition_attachment(self, client):
+        r = client.get(f"{API}/export/events.ics")
+        assert r.status_code == 200
+        cd = r.headers.get("content-disposition", "")
+        assert cd.lower().startswith("attachment"), f"expected attachment, got: {cd!r}"
+        assert ".ics" in cd
+
+    def test_ics_filter_type_concert_excludes_others(self, client):
+        c = client.post(f"{API}/events", json={
+            "title": "TEST_V14_ICS_Concert", "type": "concert", "start_date": "2027-01-05"
+        }).json()
+        s = client.post(f"{API}/events", json={
+            "title": "TEST_V14_ICS_Spectacle", "type": "spectacle", "start_date": "2027-01-06"
+        }).json()
+        r = client.post(f"{API}/events", json={
+            "title": "TEST_V14_ICS_Residence", "type": "residence",
+            "start_date": "2027-01-07", "end_date": "2027-01-09"
+        }).json()
+        rr = client.get(f"{API}/export/events.ics", params={"type": "concert"})
+        assert rr.status_code == 200
+        body = rr.text
+        assert f"UID:{c['id']}@lampli" in body
+        assert f"UID:{s['id']}@lampli" not in body
+        assert f"UID:{r['id']}@lampli" not in body
+        # cleanup
+        for eid in (c["id"], s["id"], r["id"]):
+            client.delete(f"{API}/events/{eid}")
+
+    def test_ics_range_excludes_outside(self, client):
+        before = client.post(f"{API}/events", json={
+            "title": "TEST_V14_Before", "type": "concert", "start_date": "2027-02-01"
+        }).json()
+        inside = client.post(f"{API}/events", json={
+            "title": "TEST_V14_Inside", "type": "concert", "start_date": "2027-03-15"
+        }).json()
+        after = client.post(f"{API}/events", json={
+            "title": "TEST_V14_After", "type": "concert", "start_date": "2027-04-10"
+        }).json()
+        r = client.get(f"{API}/export/events.ics",
+                       params={"start": "2027-03-01", "end": "2027-03-31"})
+        assert r.status_code == 200
+        body = r.text
+        # Count VEVENT blocks containing our TEST_V14 UIDs
+        assert f"UID:{inside['id']}@lampli" in body
+        assert f"UID:{before['id']}@lampli" not in body
+        assert f"UID:{after['id']}@lampli" not in body
+        for eid in (before["id"], inside["id"], after["id"]):
+            client.delete(f"{API}/events/{eid}")
+
+    def test_pdf_with_no_venue_no_artists(self, client):
+        ev = client.post(f"{API}/events", json={
+            "title": "TEST_V14_BarePDF", "type": "concert",
+            "start_date": "2027-05-01", "status": "option",
+        }).json()
+        eid = ev["id"]
+        r = client.get(f"{API}/events/{eid}/roadmap.pdf")
+        assert r.status_code == 200, r.text
+        assert r.headers.get("content-type", "").startswith("application/pdf")
+        assert r.content[:5] == b"%PDF-"
+        assert len(r.content) > 300
+        client.delete(f"{API}/events/{eid}")
+
+    def test_pdf_residence_includes_fin_row(self, client):
+        # residence with distinct end_date => info table should contain "FIN"
+        ev = client.post(f"{API}/events", json={
+            "title": "TEST_V14_ResidencePDF", "type": "residence",
+            "start_date": "2027-06-01", "end_date": "2027-06-05", "status": "confirmed",
+        }).json()
+        eid = ev["id"]
+        r = client.get(f"{API}/events/{eid}/roadmap.pdf")
+        assert r.status_code == 200
+        assert r.content[:5] == b"%PDF-"
+        # PDF stream is FlateDecode-compressed; extract text via PyPDF2
+        import PyPDF2
+        reader = PyPDF2.PdfReader(io.BytesIO(r.content))
+        text = "".join(p.extract_text() or "" for p in reader.pages)
+        assert "FIN" in text, f"expected 'FIN' row label in residence PDF, got: {text[:400]!r}"
+        # Also DATE label and both start/end dates should be present
+        assert "DATE" in text
+        client.delete(f"{API}/events/{eid}")
+
