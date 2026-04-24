@@ -1,0 +1,26 @@
+{
+  "summary": "Full backend + frontend testing for L'Ampli v1.2. Backend: 20/20 pytest tests pass (7 new tests added for v1.2: strict ISO date validation on POST/PATCH /events dates -> 422 on invalid, and GET /api/export/events.ics with basic+type+range filters, validates headers text/calendar;charset=utf-8, BEGIN:VCALENDAR...END:VCALENDAR body, VEVENT with UID, DTSTAMP, DTSTART;VALUE=DATE, DTEND;VALUE=DATE (exclusive = end+1), SUMMARY, STATUS CONFIRMED/TENTATIVE/CANCELLED). Frontend: Dashboard H1 is 'Planificateur d'événements'; all forbidden strings (Poste de régie, La scène orchestrée, Programmez concerts, Vue d'ensemble en direct) absent; stats-bar NOT rendered; 4 dashboard tabs still present. Calendar: all 4 view buttons (view-month/week/day/agenda) switch the visible view; ics-export anchor href '/api/export/events.ics?start=YYYY-MM-DD&end=YYYY-MM-DD' returns 200 text/calendar body; agenda-view renders with agenda-day-* groups, agenda-event-{id} and agenda-roadmap-{id} anchors pointing to /api/events/{id}/roadmap.pdf. Pointer-event DnD: seeded event on day 15, dispatched pointerdown on chip-{id} + pointermove/pointerup to cal-day-YYYY-MM-20 -> PATCH /api/events/{id}/dates fired with body {start_date:'YYYY-MM-20',end_date:null}; toast 'Événement déplacé' shown; chip has touch-action:none (getComputedStyle). Zero console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py still uses blocking requests.put/get inside async endpoints for Emergent object storage (pre-existing; use httpx.AsyncClient to avoid blocking the event loop).",
+    "export_ics loads ALL events (5000 limit) and filters by date range in Python; for larger datasets push the range filter into the Mongo query using start_date gte/lte strings.",
+    "CalendarPage.jsx: startDrag attaches pointermove/up/cancel on window but only cleans up in onUp; if component unmounts mid-drag the listeners leak. Consider useEffect cleanup tied to dragRef state.",
+    "CalendarPage.jsx: moveEvent sends end_date:null when source has no end_date, which is fine (backend ignores null). Good.",
+    "ICS export TZID missing (all-day VALUE=DATE events, so OK by spec), but no X-WR-TIMEZONE — acceptable for date-only events."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestDateValidation (4 tests) and TestICSExport (3 tests) classes for v1.2 coverage)"
+  ],
+  "success_rate": {"backend": "100% (20/20 pytest)", "frontend": "100% (all v1.2 flows pass)"},
+  "test_credentials": "N/A — single-user app, no auth",
+  "seed_data_creation": "Seeded TEST_DND_Chip event during UI DnD test; deleted via API after test. Backend tests all use TEST_* prefix and clean up via DELETE in each test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/backend_test.py -v` — 20 tests covering CRUD (artists/venues/events), PATCH /events/{id}/dates, strict date validation (422), roadmap.pdf, files upload/download, stats shape, and ICS export (/api/export/events.ics + ?type=&start=&end=). Calendar route is /calendrier (NOT /calendar). Pointer-DnD: chip has touch-action:none and uses window pointermove/up listeners; simulate in Playwright via chip.dispatch_event('pointerdown', {clientX, clientY, pointerId:1}) then window.dispatchEvent(new PointerEvent('pointermove'|'pointerup', ...)). Dashboard is at /dashboard; H1 'Planificateur d'événements'; no stats-bar."
+}

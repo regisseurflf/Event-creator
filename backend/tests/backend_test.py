@@ -254,3 +254,110 @@ class TestStats:
         # v2: total_fees_confirmed removed
         assert "total_fees_confirmed" not in data
         assert isinstance(data["confirmed"], int)
+
+
+# ------- v1.2: Strict ISO date validation -------
+class TestDateValidation:
+    def test_post_event_bad_date_422(self, client):
+        payload = {"title": "TEST_BadDate", "type": "concert", "start_date": "bad-date"}
+        r = client.post(f"{API}/events", json=payload)
+        assert r.status_code == 422, r.text
+
+    def test_post_event_good_date_ok(self, client):
+        payload = {"title": "TEST_GoodDate", "type": "concert", "start_date": "2026-07-10"}
+        r = client.post(f"{API}/events", json=payload)
+        assert r.status_code == 200, r.text
+        eid = r.json()["id"]
+        assert r.json()["start_date"] == "2026-07-10"
+        client.delete(f"{API}/events/{eid}")
+
+    def test_patch_dates_bad_422(self, client):
+        ev = client.post(f"{API}/events", json={"title": "TEST_PatchBad", "type": "concert", "start_date": "2026-07-10"}).json()
+        eid = ev["id"]
+        r = client.patch(f"{API}/events/{eid}/dates", json={"start_date": "nope"})
+        assert r.status_code == 422, r.text
+        client.delete(f"{API}/events/{eid}")
+
+    def test_patch_dates_good_persists(self, client):
+        ev = client.post(f"{API}/events", json={"title": "TEST_PatchGood", "type": "concert", "start_date": "2026-07-10"}).json()
+        eid = ev["id"]
+        r = client.patch(f"{API}/events/{eid}/dates", json={"start_date": "2026-07-15"})
+        assert r.status_code == 200, r.text
+        assert r.json()["start_date"] == "2026-07-15"
+        # Persistence
+        r = client.get(f"{API}/events/{eid}")
+        assert r.json()["start_date"] == "2026-07-15"
+        client.delete(f"{API}/events/{eid}")
+
+
+# ------- v1.2: ICS export -------
+class TestICSExport:
+    def test_ics_basic(self, client):
+        # Seed events
+        e1 = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_Concert", "type": "concert", "start_date": "2026-07-05", "status": "confirmed"
+        }).json()
+        e2 = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_Residence", "type": "residence",
+            "start_date": "2026-07-10", "end_date": "2026-07-12", "status": "option"
+        }).json()
+
+        r = client.get(f"{API}/export/events.ics")
+        assert r.status_code == 200, r.text
+        ct = r.headers.get("content-type", "")
+        assert ct.startswith("text/calendar"), f"got {ct}"
+        assert "charset=utf-8" in ct.lower()
+        body = r.text
+        assert body.startswith("BEGIN:VCALENDAR"), body[:80]
+        assert body.rstrip().endswith("END:VCALENDAR"), body[-80:]
+        # VEVENT structure
+        assert "BEGIN:VEVENT" in body
+        assert "END:VEVENT" in body
+        assert f"UID:{e1['id']}@lampli" in body
+        assert "DTSTAMP:" in body
+        assert "DTSTART;VALUE=DATE:20260705" in body
+        # For e1, end date should be DTEND exclusive = start+1 = 20260706
+        assert "DTEND;VALUE=DATE:20260706" in body
+        # For e2 residence: start=2026-07-10, end=2026-07-12 -> DTEND exclusive = 20260713
+        assert "DTSTART;VALUE=DATE:20260710" in body
+        assert "DTEND;VALUE=DATE:20260713" in body
+        assert "SUMMARY:" in body
+        assert "STATUS:CONFIRMED" in body
+        assert "STATUS:TENTATIVE" in body  # e2 status=option -> TENTATIVE
+
+        # Cleanup
+        client.delete(f"{API}/events/{e1['id']}")
+        client.delete(f"{API}/events/{e2['id']}")
+
+    def test_ics_filter_type(self, client):
+        e1 = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_OnlyRes", "type": "residence",
+            "start_date": "2026-08-01", "end_date": "2026-08-03", "status": "confirmed"
+        }).json()
+        e2 = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_NotIncluded", "type": "concert",
+            "start_date": "2026-08-02", "status": "confirmed"
+        }).json()
+        r = client.get(f"{API}/export/events.ics", params={"type": "residence"})
+        assert r.status_code == 200
+        body = r.text
+        assert f"UID:{e1['id']}@lampli" in body
+        assert f"UID:{e2['id']}@lampli" not in body
+        client.delete(f"{API}/events/{e1['id']}")
+        client.delete(f"{API}/events/{e2['id']}")
+
+    def test_ics_filter_range(self, client):
+        in_range = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_InRange", "type": "concert", "start_date": "2026-07-15"
+        }).json()
+        out_range = client.post(f"{API}/events", json={
+            "title": "TEST_ICS_OutOfRange", "type": "concert", "start_date": "2026-08-15"
+        }).json()
+        r = client.get(f"{API}/export/events.ics", params={"start": "2026-07-01", "end": "2026-07-31"})
+        assert r.status_code == 200
+        body = r.text
+        assert f"UID:{in_range['id']}@lampli" in body
+        assert f"UID:{out_range['id']}@lampli" not in body
+        client.delete(f"{API}/events/{in_range['id']}")
+        client.delete(f"{API}/events/{out_range['id']}")
+

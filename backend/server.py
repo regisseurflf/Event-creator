@@ -8,9 +8,9 @@ import logging
 import uuid
 import requests
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Literal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as date_cls, timedelta
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -122,6 +122,18 @@ EventType = Literal["concert", "spectacle", "residence"]
 EventStatus = Literal["confirmed", "option", "cancelled"]
 
 
+def _validate_iso_date(v: Optional[str]) -> Optional[str]:
+    if v is None or v == "":
+        return None
+    try:
+        # Accepts YYYY-MM-DD or full ISO 8601 datetime; normalise to YYYY-MM-DD
+        s = v[:10]
+        date_cls.fromisoformat(s)
+        return s
+    except Exception:
+        raise ValueError("Date invalide (format attendu YYYY-MM-DD)")
+
+
 class Event(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -152,10 +164,36 @@ class EventCreate(BaseModel):
     contract_file_id: Optional[str] = None
     notes: Optional[str] = ""
 
+    @field_validator("start_date")
+    @classmethod
+    def _v_start(cls, v):
+        out = _validate_iso_date(v)
+        if out is None:
+            raise ValueError("Date de début obligatoire (YYYY-MM-DD)")
+        return out
+
+    @field_validator("end_date")
+    @classmethod
+    def _v_end(cls, v):
+        return _validate_iso_date(v)
+
 
 class EventDatesUpdate(BaseModel):
     start_date: str
     end_date: Optional[str] = None
+
+    @field_validator("start_date")
+    @classmethod
+    def _v_start(cls, v):
+        out = _validate_iso_date(v)
+        if out is None:
+            raise ValueError("Date de début obligatoire (YYYY-MM-DD)")
+        return out
+
+    @field_validator("end_date")
+    @classmethod
+    def _v_end(cls, v):
+        return _validate_iso_date(v)
 
 
 # ============ File upload ============
@@ -490,6 +528,161 @@ async def event_roadmap_pdf(event_id: str):
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="feuille_de_route_{safe_title}.pdf"'},
+    )
+
+
+# ============ ICS Export ============
+def _ics_escape(s: str) -> str:
+    if not s:
+        return ""
+    return (
+        s.replace("\\", "\\\\")
+         .replace(";", "\\;")
+         .replace(",", "\\,")
+         .replace("\r\n", "\\n")
+         .replace("\n", "\\n")
+    )
+
+
+def _ics_fold(line: str) -> str:
+    # RFC 5545: lines SHOULD be max 75 octets; fold with CRLF + space
+    if len(line) <= 75:
+        return line
+    out = []
+    first = True
+    while line:
+        chunk = line[:75] if first else line[:74]
+        out.append(chunk)
+        line = line[len(chunk):]
+        first = False
+    return "\r\n ".join(out)
+
+
+@api_router.get("/export/events.ics")
+async def export_ics(
+    type: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+):
+    """Export events as iCalendar (.ics). Filters: type, start (YYYY-MM-DD), end (YYYY-MM-DD)."""
+    query = {}
+    if type:
+        query["type"] = type
+    if start:
+        _validate_iso_date(start)
+    if end:
+        _validate_iso_date(end)
+
+    items = await db.events.find(query, {"_id": 0}).sort("start_date", 1).to_list(5000)
+
+    # In-python range filter (start_date strings are YYYY-MM-DD prefix)
+    def in_range(e):
+        s = (e.get("start_date") or "")[:10]
+        ed = (e.get("end_date") or e.get("start_date") or "")[:10]
+        if start and ed < start:
+            return False
+        if end and s > end:
+            return False
+        return True
+
+    items = [e for e in items if in_range(e)]
+
+    # Preload artists & venues for SUMMARY/LOCATION
+    venue_ids = list({e["venue_id"] for e in items if e.get("venue_id")})
+    artist_ids = list({a for e in items for a in (e.get("artist_ids") or [])})
+    venues_map = {
+        v["id"]: v async for v in db.venues.find({"id": {"$in": venue_ids}}, {"_id": 0})
+    } if venue_ids else {}
+    artists_map = {
+        a["id"]: a async for a in db.artists.find({"id": {"$in": artist_ids}}, {"_id": 0})
+    } if artist_ids else {}
+
+    now_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//L'Ampli//Planificateur//FR",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "X-WR-CALNAME:L'Ampli",
+    ]
+
+    for e in items:
+        try:
+            s_date = date_cls.fromisoformat(e["start_date"][:10])
+        except Exception:
+            continue
+        end_raw = (e.get("end_date") or e["start_date"])[:10]
+        try:
+            e_date = date_cls.fromisoformat(end_raw)
+        except Exception:
+            e_date = s_date
+        dtstart = s_date.strftime("%Y%m%d")
+        dtend_exclusive = (e_date + timedelta(days=1)).strftime("%Y%m%d")
+
+        type_label = TYPE_LABEL_FR.get(e.get("type", ""), e.get("type", "")).upper()
+        summary_parts = [type_label, "·", e.get("title", "")]
+        artists_names = [
+            artists_map[a]["name"] for a in (e.get("artist_ids") or []) if a in artists_map
+        ]
+        if artists_names:
+            summary_parts.append("—")
+            summary_parts.append(", ".join(artists_names))
+        summary = " ".join(summary_parts)
+
+        location = ""
+        v = venues_map.get(e.get("venue_id"))
+        if v:
+            location = v["name"]
+            if v.get("address"):
+                location += ", " + v["address"]
+
+        desc_bits = []
+        if e.get("status"):
+            desc_bits.append(f"Statut: {STATUS_LABEL_FR.get(e['status'], e['status'])}")
+        if artists_names:
+            desc_bits.append("Artistes: " + ", ".join(artists_names))
+        if e.get("notes"):
+            desc_bits.append(e["notes"])
+        description = "\n".join(desc_bits)
+
+        uid = f"{e['id']}@lampli"
+        ev_lines = [
+            "BEGIN:VEVENT",
+            f"UID:{uid}",
+            f"DTSTAMP:{now_stamp}",
+            f"DTSTART;VALUE=DATE:{dtstart}",
+            f"DTEND;VALUE=DATE:{dtend_exclusive}",
+            f"SUMMARY:{_ics_escape(summary)}",
+        ]
+        if location:
+            ev_lines.append(f"LOCATION:{_ics_escape(location)}")
+        if description:
+            ev_lines.append(f"DESCRIPTION:{_ics_escape(description)}")
+        if e.get("status") == "cancelled":
+            ev_lines.append("STATUS:CANCELLED")
+        elif e.get("status") == "confirmed":
+            ev_lines.append("STATUS:CONFIRMED")
+        else:
+            ev_lines.append("STATUS:TENTATIVE")
+        ev_lines.append(f"CATEGORIES:{type_label}")
+        ev_lines.append("END:VEVENT")
+        lines.extend(_ics_fold(line) for line in ev_lines)
+
+    lines.append("END:VCALENDAR")
+    body = "\r\n".join(lines) + "\r\n"
+    filename = "lampli"
+    if type:
+        filename += f"_{type}"
+    if start:
+        filename += f"_{start}"
+    if end:
+        filename += f"_{end}"
+    filename += ".ics"
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
