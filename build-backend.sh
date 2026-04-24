@@ -13,7 +13,7 @@ pyinstaller \
   --distpath "$ROOT/dist/backend" \
   --workpath "$ROOT/build/pyinstaller" \
   --specpath "$ROOT/build/pyinstaller" \
-  --add-data "server.py:." \
+  --add-data "$ROOT/backend/server.py:." \
   --hidden-import uvicorn.logging \
   --hidden-import uvicorn.loops \
   --hidden-import uvicorn.loops.auto \
