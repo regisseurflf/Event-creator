@@ -28,13 +28,17 @@ Un·e programmateur·rice culturel·le gérant personnellement une saison : conc
 
 ## What's Been Implemented (v1 — Feb 2026)
 - [x] Backend REST complet `/api/artists`, `/api/venues`, `/api/events` (+ filtre `?type=`)
-- [x] Upload + download de fichiers via Emergent Object Storage (`/api/upload`, `/api/files/{id}`, `/api/files/{id}/info`)
-- [x] Endpoint `/api/stats` (événements, à venir, résidences, artistes, lieux, cachets confirmés)
+- [x] Upload + download de fichiers via Emergent Object Storage
 - [x] Dashboard avec 4 onglets (Événements, Résidences, Artistes, Lieux)
-- [x] Page Calendrier séparée (vue mois, nav prev/next/today, code couleur)
-- [x] Sélection multi-artistes, dialogs shadcn, toasts Sonner, design brutalist
-- [x] Résidences multi-jours affichées sur toutes les dates du range
-- [x] Tests complets : 100 % backend (pytest) + 100 % frontend (Playwright)
+- [x] Page Calendrier séparée (vue mois, nav prev/next/today)
+
+## What's Been Implemented (v1.1 — Feb 2026)
+- [x] Rebranding **Scène Pulse → L'Ampli** (header, footer, PDF, API)
+- [x] Suppression des champs `cachet`/`devise` et du stat « Cachets confirmés » (remplacé par « Confirmés »)
+- [x] **Export PDF** de la feuille de route (`GET /api/events/{id}/roadmap.pdf` via reportlab) : titre, date, lieu + adresse + jauge, fiches artistes, notes de production, loges/backline — bouton présent dans Events, Résidences, Calendrier
+- [x] **Vues Semaine / Jour** dans le calendrier (switcher Mois/Semaine/Jour, navigation contextuelle ±1 jour/semaine/mois)
+- [x] **Drag & drop** des événements : `PATCH /api/events/{id}/dates` déplace automatiquement `start_date` et `end_date` (résidences multi-jours gardent leur durée)
+- [x] Tests : 100 % backend (13/13 pytest) + 100 % frontend
 
 ## Backlog
 ### P1 (valeur immédiate)
