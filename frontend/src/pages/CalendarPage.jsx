@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, API, roadmapUrl } from "@/lib/api";
-import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Move, Download, List } from "lucide-react";
+import { api, API, openRoadmap } from "@/lib/api";
+import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Move, Download, List, Share2, RotateCw, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 
 const MONTHS = [
@@ -281,6 +283,7 @@ export default function CalendarPage() {
           >
             <Download className="w-4 h-4" /> .ics
           </a>
+          <ShareDialog />
         </div>
       </div>
 
@@ -372,11 +375,14 @@ export default function CalendarPage() {
                         {e.artist_ids.map((id) => artistById[id]?.name).filter(Boolean).join(", ")}
                       </div>
                     )}
-                    <a href={roadmapUrl(e.id)} target="_blank" rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => openRoadmap(e.id)}
                       data-testid={`side-roadmap-${e.id}`}
-                      className="mt-2 inline-flex items-center gap-1 text-xs text-[#FF5A00] hover:underline">
+                      className="mt-2 inline-flex items-center gap-1 text-xs text-[#FF5A00] hover:underline"
+                    >
                       <FileDown className="w-3 h-3" /> Feuille de route PDF
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -547,11 +553,14 @@ function DayView({ date, events, venueById, artistById }) {
                   </div>
                   {e.notes && <p className="mt-2 text-sm text-zinc-400 line-clamp-2">{e.notes}</p>}
                 </div>
-                <a href={roadmapUrl(e.id)} target="_blank" rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => openRoadmap(e.id)}
                   data-testid={`day-roadmap-${e.id}`}
-                  className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-800 hover:border-[#FF5A00] hover:text-[#FF5A00] text-xs font-bold uppercase tracking-widest">
+                  className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-800 hover:border-[#FF5A00] hover:text-[#FF5A00] text-xs font-bold uppercase tracking-widest"
+                >
                   <FileDown className="w-4 h-4" /> Feuille de route
-                </a>
+                </button>
               </div>
             </li>
           ))}
@@ -651,11 +660,14 @@ function AgendaView({ cursor, events, venueById, artistById }) {
                             )}
                           </div>
                         </div>
-                        <a href={roadmapUrl(e.id)} target="_blank" rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openRoadmap(e.id)}
                           data-testid={`agenda-roadmap-${e.id}`}
-                          className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF5A00] hover:underline">
+                          className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF5A00] hover:underline"
+                        >
                           <FileDown className="w-3 h-3" /> Feuille de route
-                        </a>
+                        </button>
                       </div>
                     </li>
                   ))}
@@ -666,5 +678,128 @@ function AgendaView({ cursor, events, venueById, artistById }) {
         </ul>
       )}
     </div>
+  );
+}
+
+
+function ShareDialog() {
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [rotating, setRotating] = useState(false);
+
+  const loadToken = async () => {
+    try {
+      const r = await api.get("/public/token");
+      setToken(r.data.token);
+    } catch {
+      toast.error("Impossible de récupérer le lien public");
+    }
+  };
+
+  useEffect(() => {
+    if (open && !token) loadToken();
+  }, [open, token]);
+
+  const publicUrl = token ? `${window.location.origin}/public/${token}` : "";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      toast.success("Lien copié");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Impossible de copier");
+    }
+  };
+
+  const rotate = async () => {
+    if (!window.confirm("Générer un nouveau lien ? L'ancien cessera de fonctionner.")) return;
+    setRotating(true);
+    try {
+      const r = await api.post("/public/token/rotate");
+      setToken(r.data.token);
+      toast.success("Nouveau lien généré");
+    } catch {
+      toast.error("Échec de la régénération");
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        data-testid="share-open"
+        className="inline-flex items-center gap-2 px-4 py-2 border border-zinc-800 hover:border-[#FF5A00] hover:text-[#FF5A00] text-xs font-bold uppercase tracking-widest text-white"
+      >
+        <Share2 className="w-4 h-4" /> Partager
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="bg-[#121215] border border-zinc-800 rounded-none max-w-xl text-white">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl font-bold tracking-tight">
+              Lien public · lecture seule
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-zinc-400">
+              Partagez ce lien avec vos équipes ou artistes pour qu'ils consultent le planning sans accès à l'administration. Les documents privés (riders, contrats) restent masqués.
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={publicUrl}
+                data-testid="share-url"
+                className="rounded-none bg-[#1C1C21] border-zinc-800 font-mono text-xs"
+                onFocus={(e) => e.target.select()}
+              />
+              <Button
+                onClick={copy}
+                disabled={!token}
+                data-testid="share-copy"
+                className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs whitespace-nowrap"
+              >
+                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                {copied ? "Copié" : "Copier"}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between">
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-testid="share-preview"
+                className="label-mono text-[#FF5A00] hover:underline"
+              >
+                Prévisualiser →
+              </a>
+              <Button
+                onClick={rotate}
+                disabled={rotating}
+                variant="ghost"
+                data-testid="share-rotate"
+                className="rounded-none text-zinc-400 hover:text-white font-bold uppercase tracking-widest text-xs"
+              >
+                <RotateCw className={`w-3.5 h-3.5 mr-2 ${rotating ? "animate-spin" : ""}`} />
+                Régénérer
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => setOpen(false)}
+              variant="ghost"
+              className="rounded-none text-zinc-400"
+              data-testid="share-close"
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

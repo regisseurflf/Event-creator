@@ -686,6 +686,63 @@ async def export_ics(
     )
 
 
+# ============ Public share ============
+async def _get_or_create_public_token() -> str:
+    doc = await db.settings.find_one({"id": "public"}, {"_id": 0})
+    if doc and doc.get("token"):
+        return doc["token"]
+    token = uuid.uuid4().hex
+    await db.settings.update_one(
+        {"id": "public"},
+        {"$set": {"id": "public", "token": token, "created_at": now_iso()}},
+        upsert=True,
+    )
+    return token
+
+
+async def _verify_public_token(token: str) -> None:
+    current = await _get_or_create_public_token()
+    if token != current:
+        raise HTTPException(status_code=404, detail="Lien public invalide")
+
+
+@api_router.get("/public/token")
+async def get_public_token():
+    token = await _get_or_create_public_token()
+    return {"token": token}
+
+
+@api_router.post("/public/token/rotate")
+async def rotate_public_token():
+    token = uuid.uuid4().hex
+    await db.settings.update_one(
+        {"id": "public"},
+        {"$set": {"id": "public", "token": token, "created_at": now_iso()}},
+        upsert=True,
+    )
+    return {"token": token}
+
+
+@api_router.get("/public/{token}/calendar")
+async def public_calendar(token: str):
+    await _verify_public_token(token)
+    events = await db.events.find({}, {"_id": 0}).sort("start_date", 1).to_list(5000)
+    venues = await db.venues.find({}, {"_id": 0}).to_list(5000)
+    artists = await db.artists.find({}, {"_id": 0}).to_list(5000)
+    # Strip document/file references (public should not browse private docs)
+    for e in events:
+        e.pop("tech_rider_file_id", None)
+        e.pop("contract_file_id", None)
+    return {"events": events, "venues": venues, "artists": artists}
+
+
+@api_router.get("/public/{token}/events/{event_id}/roadmap.pdf")
+async def public_roadmap(token: str, event_id: str):
+    await _verify_public_token(token)
+    # Reuse the main handler logic
+    return await event_roadmap_pdf(event_id)  # type: ignore[func-returns-value]
+
+
 # ============ Stats ============
 @api_router.get("/stats")
 async def stats():

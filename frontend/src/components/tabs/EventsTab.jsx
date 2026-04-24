@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, fileUrl, roadmapUrl } from "@/lib/api";
+import { api, fileUrl, openRoadmap } from "@/lib/api";
 import EventForm from "@/components/EventForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,7 @@ export default function EventsTab({ onMutate }) {
       api.get("/artists"),
       api.get("/venues"),
     ]);
-    setItems(e.data.filter((x) => x.type !== "residence"));
+    setItems(e.data);
     setArtists(a.data);
     setVenues(v.data);
   };
@@ -68,8 +68,8 @@ export default function EventsTab({ onMutate }) {
     <div data-testid="events-tab">
       <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
         <div>
-          <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">Concerts & spectacles</h2>
-          <p className="label-mono mt-1">{filtered.length} / {items.length} événements</p>
+          <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">Événements</h2>
+          <p className="label-mono mt-1">{filtered.length} / {items.length} · concerts · spectacles · résidences</p>
         </div>
         <Button onClick={openNew} data-testid="new-event-btn" className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
           <Plus className="w-4 h-4 mr-2" /> Nouvel événement
@@ -89,7 +89,7 @@ export default function EventsTab({ onMutate }) {
         </div>
         <div className="flex items-center gap-1">
           <Filter className="w-4 h-4 text-zinc-500 mr-2" />
-          {["all", "concert", "spectacle"].map((t) => (
+          {["all", "concert", "spectacle", "residence"].map((t) => (
             <button
               key={t}
               onClick={() => setFilterType(t)}
@@ -167,9 +167,15 @@ export default function EventsTab({ onMutate }) {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
-                      <a href={roadmapUrl(e.id)} target="_blank" rel="noreferrer" title="Feuille de route PDF" data-testid={`roadmap-event-${e.id}`} className="text-zinc-400 hover:text-[#FF5A00]">
+                      <button
+                        type="button"
+                        onClick={() => openRoadmap(e.id)}
+                        title="Feuille de route PDF"
+                        data-testid={`roadmap-event-${e.id}`}
+                        className="text-zinc-400 hover:text-[#FF5A00]"
+                      >
                         <FileDown className="w-4 h-4" />
-                      </a>
+                      </button>
                       {e.tech_rider_file_id && <a href={fileUrl(e.tech_rider_file_id)} target="_blank" rel="noreferrer" title="Fiche technique" className="text-zinc-400 hover:text-[#FF5A00]"><FileText className="w-4 h-4" /></a>}
                       {e.contract_file_id && <a href={fileUrl(e.contract_file_id)} target="_blank" rel="noreferrer" title="Contrat" className="text-zinc-400 hover:text-[#FF5A00]"><FileText className="w-4 h-4" /></a>}
                     </div>

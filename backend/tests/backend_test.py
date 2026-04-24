@@ -361,3 +361,86 @@ class TestICSExport:
         client.delete(f"{API}/events/{in_range['id']}")
         client.delete(f"{API}/events/{out_range['id']}")
 
+
+# ------- v1.3: Public share token & endpoints -------
+class TestPublicShare:
+    def test_get_token_is_stable(self, client):
+        r1 = client.get(f"{API}/public/token")
+        assert r1.status_code == 200
+        t1 = r1.json()["token"]
+        assert isinstance(t1, str) and len(t1) >= 16
+        r2 = client.get(f"{API}/public/token")
+        assert r2.status_code == 200
+        assert r2.json()["token"] == t1
+
+    def test_rotate_changes_token_and_invalidates_old(self, client):
+        old = client.get(f"{API}/public/token").json()["token"]
+        r = client.post(f"{API}/public/token/rotate")
+        assert r.status_code == 200
+        new = r.json()["token"]
+        assert new != old
+        # Old token no longer works
+        r = client.get(f"{API}/public/{old}/calendar")
+        assert r.status_code == 404
+        # Current token exposed by GET is now `new`
+        assert client.get(f"{API}/public/token").json()["token"] == new
+
+    def test_public_calendar_strips_private_file_ids(self, client):
+        # Seed an event with tech_rider_file_id and contract_file_id
+        a = client.post(f"{API}/artists", json={"name": "TEST_PubArtist"}).json()
+        v = client.post(f"{API}/venues", json={"name": "TEST_PubVenue"}).json()
+        ev = client.post(f"{API}/events", json={
+            "title": "TEST_PubEvt", "type": "concert",
+            "artist_ids": [a["id"]], "venue_id": v["id"],
+            "start_date": "2026-12-01", "status": "confirmed",
+            "tech_rider_file_id": "fake-tech", "contract_file_id": "fake-contract",
+        }).json()
+        eid = ev["id"]
+        assert ev.get("tech_rider_file_id") == "fake-tech"
+
+        token = client.get(f"{API}/public/token").json()["token"]
+        r = client.get(f"{API}/public/{token}/calendar")
+        assert r.status_code == 200
+        data = r.json()
+        assert "events" in data and "venues" in data and "artists" in data
+        assert isinstance(data["events"], list)
+        matched = [e for e in data["events"] if e["id"] == eid]
+        assert matched, "seeded event missing from public calendar"
+        pub_ev = matched[0]
+        # Private file keys stripped
+        assert "tech_rider_file_id" not in pub_ev
+        assert "contract_file_id" not in pub_ev
+        # Standard event fields preserved
+        assert pub_ev["title"] == "TEST_PubEvt"
+        assert pub_ev["type"] == "concert"
+
+        # cleanup
+        client.delete(f"{API}/events/{eid}")
+        client.delete(f"{API}/artists/{a['id']}")
+        client.delete(f"{API}/venues/{v['id']}")
+
+    def test_public_calendar_invalid_token_404(self, client):
+        r = client.get(f"{API}/public/INVALID_TOKEN_xyz/calendar")
+        assert r.status_code == 404
+
+    def test_public_roadmap_pdf_valid_token(self, client):
+        ev = client.post(f"{API}/events", json={
+            "title": "TEST_PubRoadmap", "type": "concert", "start_date": "2026-12-05",
+        }).json()
+        eid = ev["id"]
+        token = client.get(f"{API}/public/token").json()["token"]
+        r = client.get(f"{API}/public/{token}/events/{eid}/roadmap.pdf")
+        assert r.status_code == 200, r.text
+        assert r.headers.get("content-type", "").startswith("application/pdf")
+        assert r.content[:5] == b"%PDF-"
+        client.delete(f"{API}/events/{eid}")
+
+    def test_public_roadmap_pdf_invalid_token_404(self, client):
+        ev = client.post(f"{API}/events", json={
+            "title": "TEST_PubRoadmapBad", "type": "concert", "start_date": "2026-12-06",
+        }).json()
+        eid = ev["id"]
+        r = client.get(f"{API}/public/BAD_TOKEN/events/{eid}/roadmap.pdf")
+        assert r.status_code == 404
+        client.delete(f"{API}/events/{eid}")
+

@@ -1,0 +1,30 @@
+{
+  "summary": "Full backend + frontend testing for L'Ampli v1.3. Backend: 26/26 pytest pass (6 new tests for v1.3 public share: GET /api/public/token is stable across calls, POST /api/public/token/rotate returns a different token & invalidates old one (404 on /public/<old>/calendar), GET /api/public/<valid>/calendar returns 200 with {events,venues,artists} and STRIPS tech_rider_file_id + contract_file_id from events, GET /api/public/INVALID/calendar -> 404, GET /api/public/<valid>/events/<id>/roadmap.pdf returns application/pdf body starting with %PDF-, GET /api/public/BAD/events/<id>/roadmap.pdf -> 404). All pre-existing CRUD (artists/venues/events including type=residence), PATCH /events/{id}/dates, roadmap.pdf, ICS export, file upload/download and stats all still pass. Frontend: (1) Top header has exactly 4 nav links (nav-dashboard, nav-calendar, nav-artists, nav-venues); clicking each navigates to /dashboard, /calendrier, /artistes, /lieux. (2) /dashboard H1 = \"Planificateur d'événements\", EventsTab renders with filter bar 4 buttons (filter-all/concert/spectacle/residence). Creating a new event with type=Résidence via new-event-btn dialog (data-testid event-title + event-type shadcn select) succeeds; TEST_V13_Residence appeared in the list with blue residence dot (bg-[#38BDF8]). (3) roadmap-event-{id} is a <BUTTON> (not <a>); clicking it triggers GET /api/events/{id}/roadmap.pdf network request -> blob fetched for window.open. (4) /calendrier Partager (share-open) dialog renders with share-url, share-copy, share-rotate, share-close, share-preview testids; share-url value ends with /public/<32-hex-token>. Clicking share-rotate (after auto-accepting the window.confirm via page.on('dialog')) fires POST /api/public/token/rotate and share-url updates to the new token within ~1s. (5) /public/{token} renders read-only view: public-header visible, public-view-switcher + public-view-month/week/day/agenda all present, NO nav-dashboard, NO share-open button. Banner contains 'L'AMPLI' and 'lecture seule'/'Planning public'. (6) /public/BADTOKEN_XYZ shows the error UI 'Lien public invalide ou expiré'. Zero page errors. Backend rotate correctly invalidates old tokens.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CalendarPage.jsx: rotate() uses window.confirm(), which blocks in some automated contexts and native mobile webviews. Consider an in-app Dialog/AlertDialog (shadcn) for consistent UX and easier testing; this also avoids the browser-native prompt that styles outside the app theme.",
+    "CalendarPage.jsx share-copy: navigator.clipboard.writeText fails in some cross-origin iframe contexts (observed toast 'Impossible de copier' in the test iframe). Consider a fallback using document.execCommand('copy') on the readOnly input (which is already focusable/selectable via onFocus=e.target.select()).",
+    "server.py public_roadmap currently proxies by calling event_roadmap_pdf() directly — fine, but since the function is decorated as a FastAPI route handler, directly awaiting it works yet couples the two endpoints tightly. Extract PDF generation into a helper (build_event_roadmap_pdf(event_id)) used by both routes.",
+    "server.py /api/public/{token}/calendar returns events with start_date/end_date unchanged but no pagination; for large calendars consider date-range query params mirroring ICS export.",
+    "Pre-existing (from iter 3): blocking requests.put/get inside async endpoints for Emergent object storage — use httpx.AsyncClient; ICS export loads all and filters in Python."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestPublicShare class — 6 tests covering public share token lifecycle, strip-private-file-ids and public PDF)"
+  ],
+  "success_rate": {"backend": "100% (26/26 pytest)", "frontend": "100% (all v1.3 flows pass)"},
+  "test_credentials": "N/A — single-user app, no auth",
+  "seed_data_creation": "UI test created TEST_V13_Residence event via the dashboard dialog; deleted via DELETE /api/events/{id} after tests. Backend pytest test cases create/delete TEST_* prefixed fixtures inline.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/backend_test.py -v` (26 tests, ~10s). The Event type selector in the EventForm dialog is a shadcn Select: use data-testid=\"event-type\" (button), then page.get_by_role('option', name='Résidence').click(). Title input: data-testid=\"event-title\". Share rotate uses window.confirm — tests MUST register page.on('dialog', lambda d: asyncio.ensure_future(d.accept())) before clicking share-rotate, otherwise the confirm rejects and no POST is fired (this was NOT a bug, just a test harness quirk). Public routes (/public/*) correctly skip the admin Layout (Chrome component). Public calendar response strips tech_rider_file_id/contract_file_id; public PDF re-uses the main roadmap builder. backend_test.py now contains 8 top-level test classes (Artists, Venues, Events, PatchDates, RoadmapPDF, Files, Stats, DateValidation, ICSExport, PublicShare)."
+}
