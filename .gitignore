@@ -88,3 +88,12 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Electron
+node_modules/
+dist/
+frontend/build/
+backend/venv/
+backend/.env
+*.dmg
+*.AppImage

@@ -1,31 +1,38 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${BACKEND_URL}/api`;
+// En mode Electron, le backend tourne sur un port dynamique
+// injecté par main.js via executeJavaScript.
+// En mode web (dev ou déployé), on lit REACT_APP_BACKEND_URL.
+const getBackendUrl = () => {
+  if (typeof window !== "undefined" && window.__BACKEND_URL__) {
+    return window.__BACKEND_URL__;
+  }
+  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
+};
+
+export const API = `${getBackendUrl()}/api`;
 
 export const api = axios.create({
   baseURL: API,
   timeout: 60000,
 });
 
-export const fileUrl = (fileId) => `${API}/files/${fileId}`;
-export const roadmapUrl = (eventId) => `${API}/events/${eventId}/roadmap.pdf`;
+// Recalcule l'URL à chaque appel (le port peut être injecté après le chargement)
+export const getDynamicApi = () => `${getBackendUrl()}/api`;
 
-/**
- * Fetch the roadmap PDF as a Blob and open it in a new tab via a blob URL.
- * This avoids the "blank page" issue some browsers/headless envs have when
- * navigating directly to an inline PDF response.
- */
+export const fileUrl = (fileId) => `${getDynamicApi()}/files/${fileId}`;
+export const roadmapUrl = (eventId) => `${getDynamicApi()}/events/${eventId}/roadmap.pdf`;
+
 export const openRoadmap = async (eventId, pathOverride) => {
   let url = null;
   try {
+    const dynamicApi = axios.create({ baseURL: getDynamicApi(), timeout: 60000 });
     const path = pathOverride || `/events/${eventId}/roadmap.pdf`;
-    const resp = await api.get(path, { responseType: "blob" });
+    const resp = await dynamicApi.get(path, { responseType: "blob" });
     const blob = new Blob([resp.data], { type: "application/pdf" });
     url = URL.createObjectURL(blob);
     const w = window.open(url, "_blank");
     if (!w) {
-      // Pop-up blocked — force download via anchor
       const a = document.createElement("a");
       a.href = url;
       a.download = `feuille_de_route_${eventId}.pdf`;
@@ -34,7 +41,6 @@ export const openRoadmap = async (eventId, pathOverride) => {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch {
     if (url) URL.revokeObjectURL(url);
-    // Dynamic import to avoid circular dep at module level
     const { toast } = await import("sonner");
     toast.error("Impossible de générer la feuille de route");
   }

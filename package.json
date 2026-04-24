@@ -1,0 +1,48 @@
+{
+  "name": "lampli",
+  "version": "1.2.0",
+  "description": "L'Ampli — Planificateur d'événements culturels",
+  "main": "electron/main.js",
+  "author": "L'Ampli",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "electron:dev": "electron .",
+    "frontend:build": "cd frontend && npm run build",
+    "backend:build": "cd electron && pyinstaller --onefile --name lampli-server --add-data '../backend/server.py:.' backend_launcher.py",
+    "dist": "npm run frontend:build && electron-builder --mac",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "fr.lampli.app",
+    "productName": "L'Ampli",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "icon": "electron/assets/icon.icns"
+    },
+    "dmg": {
+      "title": "L'Ampli",
+      "background": "electron/assets/dmg-background.png",
+      "window": { "width": 600, "height": 400 }
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/build/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend/",
+        "to": "backend/",
+        "filter": ["lampli-server"]
+      }
+    ],
+    "asar": true
+  }
+}
