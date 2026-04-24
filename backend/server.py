@@ -8,6 +8,8 @@ import io
 import logging
 import uuid
 import httpx
+import certifi
+import ssl
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Literal
@@ -23,7 +25,10 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(
+    mongo_url,
+    tlsCAFile=certifi.where(),
+)
 db = client[os.environ['DB_NAME']]
 
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"

@@ -9,3 +9,4 @@ pydantic==2.12.5
 python-multipart==0.0.24
 reportlab==4.4.10
 starlette==0.37.2
+certifi>=2024.0.0
