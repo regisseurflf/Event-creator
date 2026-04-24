@@ -23,7 +23,6 @@ python3 -m uvicorn server:app --host 127.0.0.1 --port 8001 --reload &
 BACKEND_PID=$!
 deactivate
 
-# Attendre que le backend réponde
 echo "→ Attente du backend..."
 for i in $(seq 1 20); do
   if curl -s http://127.0.0.1:8001/api/ > /dev/null 2>&1; then
@@ -33,20 +32,19 @@ for i in $(seq 1 20); do
   sleep 1
 done
 
-# ── Frontend ──────────────────────────────────────────────────────────────────
+# ── Frontend (Vite) ───────────────────────────────────────────────────────────
 echo "→ Démarrage du frontend (port 3000)..."
 cd "$ROOT/frontend"
-REACT_APP_BACKEND_URL=http://127.0.0.1:8001 "$ROOT/frontend/node_modules/.bin/craco" start &
+VITE_BACKEND_URL=http://127.0.0.1:8001 "$ROOT/frontend/node_modules/.bin/vite" --port 3000 &
 FRONTEND_PID=$!
 
-# Attendre que le frontend réponde
 echo "→ Attente du frontend..."
 for i in $(seq 1 30); do
-  if curl -s http://localhost:3000 > /dev/null 2>&1; then
+  if curl -s http://127.0.0.1:3000 > /dev/null 2>&1; then
     echo "✓ Frontend prêt"
     break
   fi
-  sleep 2
+  sleep 1
 done
 
 # ── Electron ──────────────────────────────────────────────────────────────────

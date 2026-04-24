@@ -1,13 +1,12 @@
 import axios from "axios";
 
-// En mode Electron, le backend tourne sur un port dynamique
-// injecté par main.js via executeJavaScript.
-// En mode web (dev ou déployé), on lit REACT_APP_BACKEND_URL.
+// En mode Electron : window.__BACKEND_URL__ injecté par main.js
+// En mode Vite dev/build : variable d'env VITE_BACKEND_URL
 const getBackendUrl = () => {
   if (typeof window !== "undefined" && window.__BACKEND_URL__) {
     return window.__BACKEND_URL__;
   }
-  return process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";
+  return import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8001";
 };
 
 export const API = `${getBackendUrl()}/api`;
@@ -17,7 +16,7 @@ export const api = axios.create({
   timeout: 60000,
 });
 
-// Recalcule l'URL à chaque appel (le port peut être injecté après le chargement)
+// Recalcule à chaque appel (port dynamique Electron)
 export const getDynamicApi = () => `${getBackendUrl()}/api`;
 
 export const fileUrl = (fileId) => `${getDynamicApi()}/files/${fileId}`;

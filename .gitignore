@@ -97,3 +97,4 @@ backend/venv/
 backend/.env
 *.dmg
 *.AppImage
+frontend/node_modules/
