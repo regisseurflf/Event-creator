@@ -11,6 +11,21 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
     },
+    // Permettre d'importer des .js contenant du JSX sans extension explicite
+    extensions: [".jsx", ".js", ".tsx", ".ts", ".json"],
+  },
+  esbuild: {
+    // Traiter les fichiers .js comme du JSX (pour la compatibilité)
+    loader: "jsx",
+    include: /src\/.*\.[jt]sx?$/,
+    exclude: [],
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      loader: {
+        ".js": "jsx",
+      },
+    },
   },
   server: {
     port: 3000,
