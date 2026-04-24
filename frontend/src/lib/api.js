@@ -17,17 +17,25 @@ export const roadmapUrl = (eventId) => `${API}/events/${eventId}/roadmap.pdf`;
  * navigating directly to an inline PDF response.
  */
 export const openRoadmap = async (eventId, pathOverride) => {
-  const path = pathOverride || `/events/${eventId}/roadmap.pdf`;
-  const resp = await api.get(path, { responseType: "blob" });
-  const blob = new Blob([resp.data], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const w = window.open(url, "_blank");
-  if (!w) {
-    // Pop-up blocked — force download via anchor
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `feuille_de_route_${eventId}.pdf`;
-    a.click();
+  let url = null;
+  try {
+    const path = pathOverride || `/events/${eventId}/roadmap.pdf`;
+    const resp = await api.get(path, { responseType: "blob" });
+    const blob = new Blob([resp.data], { type: "application/pdf" });
+    url = URL.createObjectURL(blob);
+    const w = window.open(url, "_blank");
+    if (!w) {
+      // Pop-up blocked — force download via anchor
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `feuille_de_route_${eventId}.pdf`;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch {
+    if (url) URL.revokeObjectURL(url);
+    // Dynamic import to avoid circular dep at module level
+    const { toast } = await import("sonner");
+    toast.error("Impossible de générer la feuille de route");
   }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
 };

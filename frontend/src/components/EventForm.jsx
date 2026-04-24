@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, fileUrl } from "@/lib/api";
 import FileUpload from "@/components/FileUpload";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,16 +23,31 @@ const EMPTY = (type = "concert") => ({
   notes: "",
 });
 
-export default function EventForm({ open, onOpenChange, onSaved, editing, initialType = "concert", lockType = false }) {
+/**
+ * artists and venues can be passed as props to avoid redundant fetches.
+ * If not provided, the form fetches them itself (backward-compatible).
+ */
+export default function EventForm({
+  open,
+  onOpenChange,
+  onSaved,
+  editing,
+  initialType = "concert",
+  lockType = false,
+  artists: artistsProp,
+  venues: venuesProp,
+}) {
   const [form, setForm] = useState(EMPTY(initialType));
-  const [artists, setArtists] = useState([]);
-  const [venues, setVenues] = useState([]);
+  const [artists, setArtists] = useState(artistsProp || []);
+  const [venues, setVenues] = useState(venuesProp || []);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
-      api.get("/artists").then((r) => setArtists(r.data));
-      api.get("/venues").then((r) => setVenues(r.data));
+      // Only fetch if not provided by parent
+      if (!artistsProp) api.get("/artists").then((r) => setArtists(r.data)).catch(() => {});
+      if (!venuesProp) api.get("/venues").then((r) => setVenues(r.data)).catch(() => {});
+
       if (editing) {
         setForm({
           title: editing.title,
@@ -51,7 +66,11 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
         setForm(EMPTY(initialType));
       }
     }
-  }, [open, editing, initialType]);
+  }, [open, editing, initialType, artistsProp, venuesProp]);
+
+  // Sync if parent updates lists while dialog is open
+  useEffect(() => { if (artistsProp) setArtists(artistsProp); }, [artistsProp]);
+  useEffect(() => { if (venuesProp) setVenues(venuesProp); }, [venuesProp]);
 
   const toggleArtist = (id) => {
     setForm((f) => ({
@@ -81,7 +100,7 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
       }
       onOpenChange(false);
       onSaved?.();
-    } catch (e) {
+    } catch {
       toast.error("Erreur lors de l'enregistrement");
     } finally {
       setSaving(false);
@@ -95,6 +114,9 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
           <DialogTitle className="font-display text-2xl font-bold tracking-tight">
             {editing ? "Modifier l'événement" : (form.type === "residence" ? "Nouvelle résidence" : "Nouvel événement")}
           </DialogTitle>
+          <DialogDescription className="text-zinc-500 text-sm">
+            {editing ? "Modifiez les informations de cet événement." : "Remplissez les informations pour créer un nouvel événement."}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <Field label="Titre *">

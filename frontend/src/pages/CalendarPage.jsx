@@ -55,14 +55,18 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState(today);
 
   const load = useCallback(async () => {
-    const [e, v, a] = await Promise.all([
-      api.get("/events"),
-      api.get("/venues"),
-      api.get("/artists"),
-    ]);
-    setEvents(e.data);
-    setVenues(v.data);
-    setArtists(a.data);
+    try {
+      const [e, v, a] = await Promise.all([
+        api.get("/events"),
+        api.get("/venues"),
+        api.get("/artists"),
+      ]);
+      setEvents(e.data);
+      setVenues(v.data);
+      setArtists(a.data);
+    } catch {
+      toast.error("Impossible de charger le calendrier");
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -120,6 +124,11 @@ export default function CalendarPage() {
 
   // -------- Touch & mouse compatible drag via Pointer Events --------
   const dragRef = useRef(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const moveEvent = useCallback(async (id, targetDate) => {
     const source = events.find((x) => x.id === id);
@@ -199,6 +208,8 @@ export default function CalendarPage() {
       if (s.ghost) s.ghost.remove();
       dragRef.current = null;
       if (!s.moved) return;
+      // Guard: don't update state if component unmounted during drag
+      if (!mountedRef.current) return;
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
       const cell = el && el.closest ? el.closest("[data-dropdate]") : null;
       if (!cell) return;

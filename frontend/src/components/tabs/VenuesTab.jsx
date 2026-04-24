@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  DialogTrigger, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,17 +24,23 @@ export default function VenuesTab({ onMutate }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
 
-  const load = useCallback(() => api.get("/venues").then((r) => setItems(r.data)), []);
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/venues");
+      setItems(r.data);
+    } catch {
+      toast.error("Impossible de charger les lieux");
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
   const openEdit = (v) => {
     setEditing(v.id);
-    setForm({
-      name: v.name, address: v.address || "", capacity: v.capacity || 0,
-      stage_type: v.stage_type || "", notes: v.notes || "",
-    });
+    setForm({ name: v.name, address: v.address || "", capacity: v.capacity || 0, stage_type: v.stage_type || "", notes: v.notes || "" });
     setOpen(true);
   };
 
@@ -35,21 +49,35 @@ export default function VenuesTab({ onMutate }) {
     setSaving(true);
     try {
       const payload = { ...form, capacity: Number(form.capacity) || 0 };
-      if (editing) { await api.put(`/venues/${editing}`, payload); toast.success("Lieu mis à jour"); }
-      else { await api.post("/venues", payload); toast.success("Lieu créé"); }
+      if (editing) {
+        await api.put(`/venues/${editing}`, payload);
+        toast.success("Lieu mis à jour");
+      } else {
+        await api.post("/venues", payload);
+        toast.success("Lieu créé");
+      }
       setOpen(false);
       await load();
       onMutate?.();
-    } catch { toast.error("Erreur lors de l'enregistrement"); }
-    finally { setSaving(false); }
+    } catch {
+      toast.error("Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm("Supprimer ce lieu ?")) return;
-    await api.delete(`/venues/${id}`);
-    toast.success("Lieu supprimé");
-    await load();
-    onMutate?.();
+  const doDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.delete(`/venues/${deleteTarget.id}`);
+      toast.success("Lieu supprimé");
+      await load();
+      onMutate?.();
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   return (
@@ -61,7 +89,8 @@ export default function VenuesTab({ onMutate }) {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button onClick={openNew} data-testid="new-venue-btn" className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
+            <Button onClick={openNew} data-testid="new-venue-btn"
+              className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
               <Plus className="w-4 h-4 mr-2" /> Nouveau lieu
             </Button>
           </DialogTrigger>
@@ -70,6 +99,9 @@ export default function VenuesTab({ onMutate }) {
               <DialogTitle className="font-display text-2xl font-bold tracking-tight">
                 {editing ? "Modifier le lieu" : "Nouveau lieu"}
               </DialogTitle>
+              <DialogDescription className="text-zinc-500 text-sm">
+                {editing ? "Modifiez les informations de ce lieu." : "Ajoutez un nouveau lieu ou une salle partenaire."}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-2">
               <Field label="Nom *">
@@ -92,7 +124,8 @@ export default function VenuesTab({ onMutate }) {
             </div>
             <DialogFooter>
               <Button variant="ghost" className="rounded-none text-zinc-400" onClick={() => setOpen(false)} data-testid="venue-cancel">Annuler</Button>
-              <Button onClick={save} disabled={saving} data-testid="venue-save" className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
+              <Button onClick={save} disabled={saving} data-testid="venue-save"
+                className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
                 {saving ? "Enregistrement…" : "Enregistrer"}
               </Button>
             </DialogFooter>
@@ -118,7 +151,7 @@ export default function VenuesTab({ onMutate }) {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <IconBtn onClick={() => openEdit(v)} testId={`edit-venue-${v.id}`}><Pencil className="w-3.5 h-3.5" /></IconBtn>
-                  <IconBtn danger onClick={() => remove(v.id)} testId={`delete-venue-${v.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                  <IconBtn danger onClick={() => setDeleteTarget({ id: v.id, name: v.name })} testId={`delete-venue-${v.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
                 </div>
               </div>
               <div className="mt-4 flex items-center gap-4 text-xs">
@@ -136,6 +169,23 @@ export default function VenuesTab({ onMutate }) {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent className="bg-[#121215] border border-zinc-800 rounded-none text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-xl font-bold">Supprimer le lieu ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              « {deleteTarget?.name} » sera supprimé. Les événements associés conserveront leurs données mais n'auront plus de lieu assigné.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none bg-transparent border border-zinc-800 text-zinc-400 hover:text-white">Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={doDelete} className="rounded-none bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -151,7 +201,8 @@ function Field({ label, children }) {
 
 function IconBtn({ children, onClick, danger, testId }) {
   return (
-    <button type="button" onClick={onClick} data-testid={testId} className={`p-1.5 border border-zinc-800 hover:border-zinc-600 transition-colors ${danger ? "hover:text-red-500" : "hover:text-white"} text-zinc-400`}>
+    <button type="button" onClick={onClick} data-testid={testId}
+      className={`p-1.5 border border-zinc-800 hover:border-zinc-600 transition-colors ${danger ? "hover:text-red-500" : "hover:text-white"} text-zinc-400`}>
       {children}
     </button>
   );

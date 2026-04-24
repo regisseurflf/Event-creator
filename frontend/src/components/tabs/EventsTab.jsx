@@ -3,6 +3,11 @@ import { api, fileUrl, openRoadmap } from "@/lib/api";
 import EventForm from "@/components/EventForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Ticket, FileText, MapPin, Search, Filter, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +20,13 @@ const STATUS_CLR = {
 const TYPE_LABEL = { concert: "Concert", spectacle: "Spectacle", residence: "Résidence" };
 const TYPE_DOT = { concert: "bg-[#FF5A00]", spectacle: "bg-[#FACC15]", residence: "bg-[#38BDF8]" };
 
+// Fix: parse date as local time to avoid UTC-offset day shift
+const fmtDate = (d) => {
+  if (!d) return "—";
+  const local = new Date(d + "T00:00:00");
+  return local.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+};
+
 export default function EventsTab({ onMutate }) {
   const [items, setItems] = useState([]);
   const [artists, setArtists] = useState([]);
@@ -23,16 +35,21 @@ export default function EventsTab({ onMutate }) {
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, title }
 
   const load = useCallback(async () => {
-    const [e, a, v] = await Promise.all([
-      api.get("/events"),
-      api.get("/artists"),
-      api.get("/venues"),
-    ]);
-    setItems(e.data);
-    setArtists(a.data);
-    setVenues(v.data);
+    try {
+      const [e, a, v] = await Promise.all([
+        api.get("/events"),
+        api.get("/artists"),
+        api.get("/venues"),
+      ]);
+      setItems(e.data);
+      setArtists(a.data);
+      setVenues(v.data);
+    } catch {
+      toast.error("Impossible de charger les données");
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -54,15 +71,21 @@ export default function EventsTab({ onMutate }) {
   const openNew = () => { setEditing(null); setOpen(true); };
   const openEdit = (ev) => { setEditing(ev); setOpen(true); };
 
-  const remove = async (id) => {
-    if (!window.confirm("Supprimer cet événement ?")) return;
-    await api.delete(`/events/${id}`);
-    toast.success("Événement supprimé");
-    await load();
-    onMutate?.();
-  };
+  const confirmDelete = (ev) => setDeleteTarget({ id: ev.id, title: ev.title });
 
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  const doDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.delete(`/events/${deleteTarget.id}`);
+      toast.success("Événement supprimé");
+      await load();
+      onMutate?.();
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <div data-testid="events-tab">
@@ -183,7 +206,7 @@ export default function EventsTab({ onMutate }) {
                   <td className="p-3">
                     <div className="flex items-center gap-1 justify-end">
                       <IconBtn onClick={() => openEdit(e)} testId={`edit-event-${e.id}`}><Pencil className="w-3.5 h-3.5" /></IconBtn>
-                      <IconBtn danger onClick={() => remove(e.id)} testId={`delete-event-${e.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                      <IconBtn danger onClick={() => confirmDelete(e)} testId={`delete-event-${e.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
                     </div>
                   </td>
                 </tr>
@@ -198,8 +221,32 @@ export default function EventsTab({ onMutate }) {
         onOpenChange={setOpen}
         editing={editing}
         initialType="concert"
+        artists={artists}
+        venues={venues}
         onSaved={() => { load(); onMutate?.(); }}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent className="bg-[#121215] border border-zinc-800 rounded-none text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-xl font-bold">Supprimer l'événement ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              « {deleteTarget?.title} » sera définitivement supprimé. Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none bg-transparent border border-zinc-800 text-zinc-400 hover:text-white">
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doDelete}
+              className="rounded-none bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -6,7 +7,7 @@ import os
 import io
 import logging
 import uuid
-import requests
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Literal
@@ -16,7 +17,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -25,58 +26,84 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Emergent Object Storage
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "scene-pulse"
 storage_key: Optional[str] = None
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def init_storage():
+# ── Shared async HTTP client ─────────────────────────────────────────────────
+_http_client: Optional[httpx.AsyncClient] = None
+
+def _get_http() -> httpx.AsyncClient:
+    if _http_client is None:
+        raise RuntimeError("HTTP client not initialised")
+    return _http_client
+
+async def init_storage() -> str:
     global storage_key
     if storage_key:
         return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp = await _get_http().post(
+        f"{STORAGE_URL}/init",
+        json={"emergent_key": EMERGENT_KEY},
+        timeout=30,
+    )
     resp.raise_for_status()
     storage_key = resp.json()["storage_key"]
     return storage_key
 
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
+async def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = await init_storage()
+    resp = await _get_http().put(
         f"{STORAGE_URL}/objects/{path}",
         headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
+        content=data,
+        timeout=120,
     )
     resp.raise_for_status()
     return resp.json()
 
-
-def get_object(path: str):
-    key = init_storage()
-    resp = requests.get(
+async def get_object(path: str):
+    key = await init_storage()
+    resp = await _get_http().get(
         f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
+        headers={"X-Storage-Key": key},
+        timeout=60,
     )
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
+# ── Lifespan (replaces deprecated @app.on_event) ────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient()
+    try:
+        await init_storage()
+        logger.info("Storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
+    yield
+    await _http_client.aclose()
+    client.close()
 
-app = FastAPI(title="L'Ampli API")
+app = FastAPI(title="L'Ampli API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
-
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
-
 
 class FileRef(BaseModel):
     id: str
     original_filename: str
     content_type: str
     size: int
-
 
 class Artist(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -89,7 +116,6 @@ class Artist(BaseModel):
     photo_file_id: Optional[str] = None
     created_at: str = Field(default_factory=now_iso)
 
-
 class ArtistCreate(BaseModel):
     name: str
     bio: Optional[str] = ""
@@ -97,7 +123,6 @@ class ArtistCreate(BaseModel):
     website: Optional[str] = ""
     social_links: Optional[str] = ""
     photo_file_id: Optional[str] = None
-
 
 class Venue(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -109,7 +134,6 @@ class Venue(BaseModel):
     notes: Optional[str] = ""
     created_at: str = Field(default_factory=now_iso)
 
-
 class VenueCreate(BaseModel):
     name: str
     address: Optional[str] = ""
@@ -117,22 +141,18 @@ class VenueCreate(BaseModel):
     stage_type: Optional[str] = ""
     notes: Optional[str] = ""
 
-
 EventType = Literal["concert", "spectacle", "residence"]
 EventStatus = Literal["confirmed", "option", "cancelled"]
-
 
 def _validate_iso_date(v: Optional[str]) -> Optional[str]:
     if v is None or v == "":
         return None
     try:
-        # Accepts YYYY-MM-DD or full ISO 8601 datetime; normalise to YYYY-MM-DD
         s = v[:10]
         date_cls.fromisoformat(s)
         return s
     except Exception:
         raise ValueError("Date invalide (format attendu YYYY-MM-DD)")
-
 
 class Event(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -149,7 +169,6 @@ class Event(BaseModel):
     contract_file_id: Optional[str] = None
     notes: Optional[str] = ""
     created_at: str = Field(default_factory=now_iso)
-
 
 class EventCreate(BaseModel):
     title: str
@@ -177,7 +196,6 @@ class EventCreate(BaseModel):
     def _v_end(cls, v):
         return _validate_iso_date(v)
 
-
 class EventDatesUpdate(BaseModel):
     start_date: str
     end_date: Optional[str] = None
@@ -195,7 +213,6 @@ class EventDatesUpdate(BaseModel):
     def _v_end(cls, v):
         return _validate_iso_date(v)
 
-
 # ============ File upload ============
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -206,7 +223,7 @@ async def upload_file(file: UploadFile = File(...)):
     file_id = str(uuid.uuid4())
     path = f"{APP_NAME}/uploads/{file_id}.{ext}"
     content_type = file.content_type or "application/octet-stream"
-    result = put_object(path, data, content_type)
+    result = await put_object(path, data, content_type)
     doc = {
         "id": file_id,
         "storage_path": result["path"],
@@ -217,52 +234,38 @@ async def upload_file(file: UploadFile = File(...)):
         "created_at": now_iso(),
     }
     await db.files.insert_one(doc)
-    return {
-        "id": file_id,
-        "original_filename": file.filename,
-        "content_type": content_type,
-        "size": doc["size"],
-    }
-
+    return {"id": file_id, "original_filename": file.filename, "content_type": content_type, "size": doc["size"]}
 
 @api_router.get("/files/{file_id}")
 async def download_file(file_id: str):
     record = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
     if not record:
         raise HTTPException(status_code=404, detail="Fichier introuvable")
-    data, content_type = get_object(record["storage_path"])
+    data, content_type = await get_object(record["storage_path"])
     return Response(
         content=data,
         media_type=record.get("content_type", content_type),
         headers={"Content-Disposition": f'inline; filename="{record["original_filename"]}"'},
     )
 
-
 @api_router.get("/files/{file_id}/info", response_model=FileRef)
 async def file_info(file_id: str):
     record = await db.files.find_one({"id": file_id, "is_deleted": False}, {"_id": 0})
     if not record:
         raise HTTPException(status_code=404, detail="Fichier introuvable")
-    return FileRef(
-        id=record["id"],
-        original_filename=record["original_filename"],
-        content_type=record["content_type"],
-        size=record["size"],
-    )
-
+    return FileRef(id=record["id"], original_filename=record["original_filename"],
+                   content_type=record["content_type"], size=record["size"])
 
 # ============ Artists ============
 @api_router.get("/artists", response_model=List[Artist])
 async def list_artists():
     return await db.artists.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
-
 @api_router.post("/artists", response_model=Artist)
 async def create_artist(payload: ArtistCreate):
     artist = Artist(**payload.model_dump())
     await db.artists.insert_one(artist.model_dump())
     return artist
-
 
 @api_router.get("/artists/{artist_id}", response_model=Artist)
 async def get_artist(artist_id: str):
@@ -271,7 +274,6 @@ async def get_artist(artist_id: str):
         raise HTTPException(status_code=404, detail="Artiste introuvable")
     return item
 
-
 @api_router.put("/artists/{artist_id}", response_model=Artist)
 async def update_artist(artist_id: str, payload: ArtistCreate):
     result = await db.artists.update_one({"id": artist_id}, {"$set": payload.model_dump()})
@@ -279,27 +281,28 @@ async def update_artist(artist_id: str, payload: ArtistCreate):
         raise HTTPException(status_code=404, detail="Artiste introuvable")
     return await db.artists.find_one({"id": artist_id}, {"_id": 0})
 
-
 @api_router.delete("/artists/{artist_id}")
 async def delete_artist(artist_id: str):
     result = await db.artists.delete_one({"id": artist_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Artiste introuvable")
+    # Cascade: remove artist_id from all events
+    await db.events.update_many(
+        {"artist_ids": artist_id},
+        {"$pull": {"artist_ids": artist_id}},
+    )
     return {"ok": True}
-
 
 # ============ Venues ============
 @api_router.get("/venues", response_model=List[Venue])
 async def list_venues():
     return await db.venues.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
-
 @api_router.post("/venues", response_model=Venue)
 async def create_venue(payload: VenueCreate):
     venue = Venue(**payload.model_dump())
     await db.venues.insert_one(venue.model_dump())
     return venue
-
 
 @api_router.get("/venues/{venue_id}", response_model=Venue)
 async def get_venue(venue_id: str):
@@ -308,7 +311,6 @@ async def get_venue(venue_id: str):
         raise HTTPException(status_code=404, detail="Lieu introuvable")
     return item
 
-
 @api_router.put("/venues/{venue_id}", response_model=Venue)
 async def update_venue(venue_id: str, payload: VenueCreate):
     result = await db.venues.update_one({"id": venue_id}, {"$set": payload.model_dump()})
@@ -316,14 +318,17 @@ async def update_venue(venue_id: str, payload: VenueCreate):
         raise HTTPException(status_code=404, detail="Lieu introuvable")
     return await db.venues.find_one({"id": venue_id}, {"_id": 0})
 
-
 @api_router.delete("/venues/{venue_id}")
 async def delete_venue(venue_id: str):
     result = await db.venues.delete_one({"id": venue_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Lieu introuvable")
+    # Cascade: clear venue_id from all events that referenced this venue
+    await db.events.update_many(
+        {"venue_id": venue_id},
+        {"$set": {"venue_id": None}},
+    )
     return {"ok": True}
-
 
 # ============ Events ============
 @api_router.get("/events", response_model=List[Event])
@@ -333,13 +338,11 @@ async def list_events(type: Optional[str] = None):
         query["type"] = type
     return await db.events.find(query, {"_id": 0}).sort("start_date", 1).to_list(2000)
 
-
 @api_router.post("/events", response_model=Event)
 async def create_event(payload: EventCreate):
     event = Event(**payload.model_dump())
     await db.events.insert_one(event.model_dump())
     return event
-
 
 @api_router.get("/events/{event_id}", response_model=Event)
 async def get_event(event_id: str):
@@ -348,14 +351,12 @@ async def get_event(event_id: str):
         raise HTTPException(status_code=404, detail="Événement introuvable")
     return item
 
-
 @api_router.put("/events/{event_id}", response_model=Event)
 async def update_event(event_id: str, payload: EventCreate):
     result = await db.events.update_one({"id": event_id}, {"$set": payload.model_dump()})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Événement introuvable")
     return await db.events.find_one({"id": event_id}, {"_id": 0})
-
 
 @api_router.patch("/events/{event_id}/dates", response_model=Event)
 async def update_event_dates(event_id: str, payload: EventDatesUpdate):
@@ -367,7 +368,6 @@ async def update_event_dates(event_id: str, payload: EventDatesUpdate):
         raise HTTPException(status_code=404, detail="Événement introuvable")
     return await db.events.find_one({"id": event_id}, {"_id": 0})
 
-
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str):
     result = await db.events.delete_one({"id": event_id})
@@ -375,11 +375,9 @@ async def delete_event(event_id: str):
         raise HTTPException(status_code=404, detail="Événement introuvable")
     return {"ok": True}
 
-
 # ============ Roadmap PDF ============
 TYPE_LABEL_FR = {"concert": "Concert", "spectacle": "Spectacle", "residence": "Résidence"}
 STATUS_LABEL_FR = {"confirmed": "Confirmé", "option": "Option", "cancelled": "Annulé"}
-
 
 def _fmt_date(iso: Optional[str]) -> str:
     if not iso:
@@ -395,13 +393,10 @@ def _fmt_date(iso: Optional[str]) -> str:
              "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
     return f"{d.day:02d} {months[d.month - 1]} {d.year}"
 
-
-# ---- PDF helpers ----
 PDF_BLACK = colors.HexColor("#0A0A0C")
 PDF_ORANGE = colors.HexColor("#FF5A00")
 PDF_GREY = colors.HexColor("#71717A")
 PDF_RULE = colors.HexColor("#E4E4E7")
-
 
 def _pdf_styles():
     styles = getSampleStyleSheet()
@@ -419,12 +414,10 @@ def _pdf_styles():
                                fontSize=9, textColor=PDF_GREY, leading=12),
     }
 
-
-def _pdf_rule(width_mm: float, thickness: int, color) -> Table:
+def _pdf_rule_elem(width_mm: float, thickness: int, color) -> Table:
     t = Table([[""]], colWidths=[width_mm * mm], rowHeights=[thickness])
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), color)]))
     return t
-
 
 def _pdf_info_table(event: dict, venue: Optional[dict], artists: list, styles: dict) -> Table:
     rows = [["DATE", _fmt_date(event.get("start_date"))]]
@@ -456,7 +449,6 @@ def _pdf_info_table(event: dict, venue: Optional[dict], artists: list, styles: d
     ]))
     return table
 
-
 def _pdf_artist_block(a: dict) -> str:
     block = f"<b>{a['name']}</b>"
     if a.get("genre"):
@@ -469,7 +461,6 @@ def _pdf_artist_block(a: dict) -> str:
         block += f"<br/><font color='#71717A' size='9'>{a['social_links']}</font>"
     return block
 
-
 def _build_roadmap_story(event: dict, venue: Optional[dict], artists: list) -> list:
     styles = _pdf_styles()
     story = []
@@ -480,11 +471,10 @@ def _build_roadmap_story(event: dict, venue: Optional[dict], artists: list) -> l
         f"Statut : {STATUS_LABEL_FR.get(event['status'], event['status'])}",
         styles["sub"],
     ))
-    story.append(_pdf_rule(170, 2, PDF_ORANGE))
+    story.append(_pdf_rule_elem(170, 2, PDF_ORANGE))
     story.append(Spacer(1, 10))
     story.append(_pdf_info_table(event, venue, artists, styles))
     story.append(Spacer(1, 14))
-
     if artists:
         story.append(Paragraph("FICHES ARTISTES", styles["h2"]))
         for a in artists:
@@ -496,16 +486,14 @@ def _build_roadmap_story(event: dict, venue: Optional[dict], artists: list) -> l
     if event.get("notes"):
         story.append(Paragraph("NOTES DE PRODUCTION", styles["h2"]))
         story.append(Paragraph(event["notes"].replace("\n", "<br/>"), styles["body"]))
-
     story.append(Spacer(1, 18))
-    story.append(_pdf_rule(170, 1, PDF_RULE))
+    story.append(_pdf_rule_elem(170, 1, PDF_RULE))
     story.append(Spacer(1, 6))
     story.append(Paragraph(
         f"Générée le {_fmt_date(datetime.now(timezone.utc).isoformat())} · L'Ampli",
         styles["meta"],
     ))
     return story
-
 
 async def _load_event_context(event_id: str):
     event = await db.events.find_one({"id": event_id}, {"_id": 0})
@@ -520,20 +508,15 @@ async def _load_event_context(event_id: str):
             artists.append(a)
     return event, venue, artists
 
-
 def _render_pdf(event: dict, story: list) -> bytes:
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=18 * mm, rightMargin=18 * mm,
-        topMargin=18 * mm, bottomMargin=18 * mm,
-        title=f"Feuille de route — {event['title']}",
-    )
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm,
+        title=f"Feuille de route — {event['title']}")
     doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf
-
 
 @api_router.get("/events/{event_id}/roadmap.pdf")
 async def event_roadmap_pdf(event_id: str):
@@ -541,28 +524,16 @@ async def event_roadmap_pdf(event_id: str):
     story = _build_roadmap_story(event, venue, artists)
     pdf = _render_pdf(event, story)
     safe_title = "".join(c if c.isalnum() else "_" for c in event["title"])[:60]
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="feuille_de_route_{safe_title}.pdf"'},
-    )
-
+    return Response(content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="feuille_de_route_{safe_title}.pdf"'})
 
 # ============ ICS Export ============
 def _ics_escape(s: str) -> str:
     if not s:
         return ""
-    return (
-        s.replace("\\", "\\\\")
-         .replace(";", "\\;")
-         .replace(",", "\\,")
-         .replace("\r\n", "\\n")
-         .replace("\n", "\\n")
-    )
-
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\n", "\\n")
 
 def _ics_fold(line: str) -> str:
-    # RFC 5545: lines SHOULD be max 75 octets; fold with CRLF + space
     if len(line) <= 75:
         return line
     out = []
@@ -574,9 +545,7 @@ def _ics_fold(line: str) -> str:
         first = False
     return "\r\n ".join(out)
 
-
 ICS_STATUS_MAP = {"cancelled": "CANCELLED", "confirmed": "CONFIRMED"}
-
 
 def _ics_filter_items(items: list, start: Optional[str], end: Optional[str]) -> list:
     def in_range(e):
@@ -589,18 +558,12 @@ def _ics_filter_items(items: list, start: Optional[str], end: Optional[str]) -> 
         return True
     return [e for e in items if in_range(e)]
 
-
 async def _ics_load_related(items: list):
     venue_ids = list({e["venue_id"] for e in items if e.get("venue_id")})
     artist_ids = list({a for e in items for a in (e.get("artist_ids") or [])})
-    venues_map = {
-        v["id"]: v async for v in db.venues.find({"id": {"$in": venue_ids}}, {"_id": 0})
-    } if venue_ids else {}
-    artists_map = {
-        a["id"]: a async for a in db.artists.find({"id": {"$in": artist_ids}}, {"_id": 0})
-    } if artist_ids else {}
+    venues_map = {v["id"]: v async for v in db.venues.find({"id": {"$in": venue_ids}}, {"_id": 0})} if venue_ids else {}
+    artists_map = {a["id"]: a async for a in db.artists.find({"id": {"$in": artist_ids}}, {"_id": 0})} if artist_ids else {}
     return venues_map, artists_map
-
 
 def _ics_event_dates(e: dict):
     try:
@@ -614,12 +577,9 @@ def _ics_event_dates(e: dict):
         e_date = s_date
     return s_date, (e_date + timedelta(days=1))
 
-
 def _ics_summary_and_description(e: dict, artists_map: dict) -> tuple:
     type_label = TYPE_LABEL_FR.get(e.get("type", ""), e.get("type", "")).upper()
-    artists_names = [
-        artists_map[a]["name"] for a in (e.get("artist_ids") or []) if a in artists_map
-    ]
+    artists_names = [artists_map[a]["name"] for a in (e.get("artist_ids") or []) if a in artists_map]
     summary = f"{type_label} · {e.get('title', '')}"
     if artists_names:
         summary += " — " + ", ".join(artists_names)
@@ -632,7 +592,6 @@ def _ics_summary_and_description(e: dict, artists_map: dict) -> tuple:
         desc_bits.append(e["notes"])
     return type_label, summary, "\n".join(desc_bits)
 
-
 def _ics_location(e: dict, venues_map: dict) -> str:
     v = venues_map.get(e.get("venue_id"))
     if not v:
@@ -642,21 +601,16 @@ def _ics_location(e: dict, venues_map: dict) -> str:
         location += ", " + v["address"]
     return location
 
-
 def _build_vevent(e: dict, now_stamp: str, venues_map: dict, artists_map: dict) -> list:
     s_date, end_exclusive = _ics_event_dates(e)
     if s_date is None:
         return []
     type_label, summary, description = _ics_summary_and_description(e, artists_map)
     location = _ics_location(e, venues_map)
-    lines = [
-        "BEGIN:VEVENT",
-        f"UID:{e['id']}@lampli",
-        f"DTSTAMP:{now_stamp}",
-        f"DTSTART;VALUE=DATE:{s_date.strftime('%Y%m%d')}",
-        f"DTEND;VALUE=DATE:{end_exclusive.strftime('%Y%m%d')}",
-        f"SUMMARY:{_ics_escape(summary)}",
-    ]
+    lines = ["BEGIN:VEVENT", f"UID:{e['id']}@lampli", f"DTSTAMP:{now_stamp}",
+             f"DTSTART;VALUE=DATE:{s_date.strftime('%Y%m%d')}",
+             f"DTEND;VALUE=DATE:{end_exclusive.strftime('%Y%m%d')}",
+             f"SUMMARY:{_ics_escape(summary)}"]
     if location:
         lines.append(f"LOCATION:{_ics_escape(location)}")
     if description:
@@ -666,7 +620,6 @@ def _build_vevent(e: dict, now_stamp: str, venues_map: dict, artists_map: dict) 
     lines.append("END:VEVENT")
     return [_ics_fold(ln) for ln in lines]
 
-
 def _ics_filename(type: Optional[str], start: Optional[str], end: Optional[str]) -> str:
     parts = ["lampli"]
     for p in (type, start, end):
@@ -674,44 +627,25 @@ def _ics_filename(type: Optional[str], start: Optional[str], end: Optional[str])
             parts.append(p)
     return "_".join(parts) + ".ics"
 
-
 @api_router.get("/export/events.ics")
-async def export_ics(
-    type: Optional[str] = None,
-    start: Optional[str] = None,
-    end: Optional[str] = None,
-):
-    """Export events as iCalendar (.ics). Filters: type, start (YYYY-MM-DD), end (YYYY-MM-DD)."""
+async def export_ics(type: Optional[str] = None, start: Optional[str] = None, end: Optional[str] = None):
     if start:
         _validate_iso_date(start)
     if end:
         _validate_iso_date(end)
-
     query = {"type": type} if type else {}
     raw = await db.events.find(query, {"_id": 0}).sort("start_date", 1).to_list(5000)
     items = _ics_filter_items(raw, start, end)
     venues_map, artists_map = await _ics_load_related(items)
-
     now_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    lines = [
-        "BEGIN:VCALENDAR",
-        "VERSION:2.0",
-        "PRODID:-//L'Ampli//Planificateur//FR",
-        "CALSCALE:GREGORIAN",
-        "METHOD:PUBLISH",
-        "X-WR-CALNAME:L'Ampli",
-    ]
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//L'Ampli//Planificateur//FR",
+             "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:L'Ampli"]
     for e in items:
         lines.extend(_build_vevent(e, now_stamp, venues_map, artists_map))
     lines.append("END:VCALENDAR")
-
     body = "\r\n".join(lines) + "\r\n"
-    return Response(
-        content=body,
-        media_type="text/calendar; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{_ics_filename(type, start, end)}"'},
-    )
-
+    return Response(content=body, media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{_ics_filename(type, start, end)}"'})
 
 # ============ Public share ============
 async def _get_or_create_public_token() -> str:
@@ -719,36 +653,25 @@ async def _get_or_create_public_token() -> str:
     if doc and doc.get("token"):
         return doc["token"]
     token = uuid.uuid4().hex
-    await db.settings.update_one(
-        {"id": "public"},
-        {"$set": {"id": "public", "token": token, "created_at": now_iso()}},
-        upsert=True,
-    )
+    await db.settings.update_one({"id": "public"},
+        {"$set": {"id": "public", "token": token, "created_at": now_iso()}}, upsert=True)
     return token
-
 
 async def _verify_public_token(token: str) -> None:
     current = await _get_or_create_public_token()
     if token != current:
         raise HTTPException(status_code=404, detail="Lien public invalide")
 
-
 @api_router.get("/public/token")
 async def get_public_token():
-    token = await _get_or_create_public_token()
-    return {"token": token}
-
+    return {"token": await _get_or_create_public_token()}
 
 @api_router.post("/public/token/rotate")
 async def rotate_public_token():
     token = uuid.uuid4().hex
-    await db.settings.update_one(
-        {"id": "public"},
-        {"$set": {"id": "public", "token": token, "created_at": now_iso()}},
-        upsert=True,
-    )
+    await db.settings.update_one({"id": "public"},
+        {"$set": {"id": "public", "token": token, "created_at": now_iso()}}, upsert=True)
     return {"token": token}
-
 
 @api_router.get("/public/{token}/calendar")
 async def public_calendar(token: str):
@@ -756,71 +679,45 @@ async def public_calendar(token: str):
     events = await db.events.find({}, {"_id": 0}).sort("start_date", 1).to_list(5000)
     venues = await db.venues.find({}, {"_id": 0}).to_list(5000)
     artists = await db.artists.find({}, {"_id": 0}).to_list(5000)
-    # Strip document/file references (public should not browse private docs)
     for e in events:
         e.pop("tech_rider_file_id", None)
         e.pop("contract_file_id", None)
     return {"events": events, "venues": venues, "artists": artists}
 
-
 @api_router.get("/public/{token}/events/{event_id}/roadmap.pdf")
 async def public_roadmap(token: str, event_id: str):
     await _verify_public_token(token)
-    # Reuse the main handler logic
-    return await event_roadmap_pdf(event_id)  # type: ignore[func-returns-value]
-
+    return await event_roadmap_pdf(event_id)
 
 # ============ Stats ============
 @api_router.get("/stats")
 async def stats():
-    now = datetime.now(timezone.utc).isoformat()
+    # Use YYYY-MM-DD string comparison (consistent with how start_date is stored)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     total_events = await db.events.count_documents({})
-    upcoming = await db.events.count_documents({"start_date": {"$gte": now}})
+    upcoming = await db.events.count_documents({"start_date": {"$gte": today}})
     artists_count = await db.artists.count_documents({})
     venues_count = await db.venues.count_documents({})
     residencies = await db.events.count_documents({"type": "residence"})
     confirmed = await db.events.count_documents({"status": "confirmed"})
-    return {
-        "total_events": total_events,
-        "upcoming_events": upcoming,
-        "artists": artists_count,
-        "venues": venues_count,
-        "residencies": residencies,
-        "confirmed": confirmed,
-    }
-
+    return {"total_events": total_events, "upcoming_events": upcoming,
+            "artists": artists_count, "venues": venues_count,
+            "residencies": residencies, "confirmed": confirmed}
 
 @api_router.get("/")
 async def root():
-    return {"app": "L'Ampli", "version": "1.1"}
-
+    return {"app": "L'Ampli", "version": "1.2"}
 
 app.include_router(api_router)
+
+# CORS — restrict in production by setting CORS_ORIGINS env var
+cors_origins_env = os.environ.get('CORS_ORIGINS', '')
+allow_origins = [o.strip() for o in cors_origins_env.split(',') if o.strip()] or ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-
-@app.on_event("startup")
-async def startup():
-    try:
-        init_storage()
-        logger.info("Storage initialized")
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

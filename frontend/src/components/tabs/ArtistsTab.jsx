@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, fileUrl } from "@/lib/api";
 import FileUpload from "@/components/FileUpload";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  DialogTrigger, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,8 +25,17 @@ export default function ArtistsTab({ onMutate }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
 
-  const load = useCallback(() => api.get("/artists").then((r) => setItems(r.data)), []);
+  const load = useCallback(async () => {
+    try {
+      const r = await api.get("/artists");
+      setItems(r.data);
+    } catch {
+      toast.error("Impossible de charger les artistes");
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   const openNew = () => { setEditing(null); setForm(EMPTY); setOpen(true); };
@@ -46,16 +63,24 @@ export default function ArtistsTab({ onMutate }) {
       setOpen(false);
       await load();
       onMutate?.();
-    } catch { toast.error("Erreur lors de l'enregistrement"); }
-    finally { setSaving(false); }
+    } catch {
+      toast.error("Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm("Supprimer cet artiste ?")) return;
-    await api.delete(`/artists/${id}`);
-    toast.success("Artiste supprimé");
-    await load();
-    onMutate?.();
+  const doDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.delete(`/artists/${deleteTarget.id}`);
+      toast.success("Artiste supprimé");
+      await load();
+      onMutate?.();
+    } catch {
+      toast.error("Erreur lors de la suppression");
+    } finally {
+      setDeleteTarget(null);
+    }
   };
 
   return (
@@ -67,11 +92,8 @@ export default function ArtistsTab({ onMutate }) {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button
-              onClick={openNew}
-              data-testid="new-artist-btn"
-              className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs"
-            >
+            <Button onClick={openNew} data-testid="new-artist-btn"
+              className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
               <Plus className="w-4 h-4 mr-2" /> Nouvel artiste
             </Button>
           </DialogTrigger>
@@ -80,6 +102,9 @@ export default function ArtistsTab({ onMutate }) {
               <DialogTitle className="font-display text-2xl font-bold tracking-tight">
                 {editing ? "Modifier l'artiste" : "Nouvel artiste"}
               </DialogTitle>
+              <DialogDescription className="text-zinc-500 text-sm">
+                {editing ? "Modifiez la fiche de cet artiste." : "Créez une nouvelle fiche artiste."}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-2">
               <Field label="Nom *">
@@ -99,20 +124,14 @@ export default function ArtistsTab({ onMutate }) {
               <Field label="Réseaux sociaux">
                 <Input data-testid="artist-social" className="rounded-none bg-[#1C1C21] border-zinc-800" value={form.social_links} onChange={(e) => setForm({ ...form, social_links: e.target.value })} placeholder="Instagram, Bandcamp…" />
               </Field>
-              <FileUpload
-                label="Photo de l'artiste"
-                value={form.photo_file_id}
+              <FileUpload label="Photo de l'artiste" value={form.photo_file_id}
                 onChange={(id) => setForm({ ...form, photo_file_id: id })}
-                kind="image"
-                accept="image/*"
-                testId="artist-photo"
-              />
+                kind="image" accept="image/*" testId="artist-photo" />
             </div>
             <DialogFooter>
-              <Button variant="ghost" className="rounded-none text-zinc-400" onClick={() => setOpen(false)} data-testid="artist-cancel">
-                Annuler
-              </Button>
-              <Button onClick={save} disabled={saving} data-testid="artist-save" className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
+              <Button variant="ghost" className="rounded-none text-zinc-400" onClick={() => setOpen(false)} data-testid="artist-cancel">Annuler</Button>
+              <Button onClick={save} disabled={saving} data-testid="artist-save"
+                className="rounded-none bg-[#FF5A00] hover:bg-[#FF7A33] text-white font-bold uppercase tracking-widest text-xs">
                 {saving ? "Enregistrement…" : "Enregistrer"}
               </Button>
             </DialogFooter>
@@ -143,7 +162,7 @@ export default function ArtistsTab({ onMutate }) {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <IconBtn title="Modifier" onClick={() => openEdit(a)} testId={`edit-artist-${a.id}`}><Pencil className="w-3.5 h-3.5" /></IconBtn>
-                    <IconBtn title="Supprimer" onClick={() => remove(a.id)} danger testId={`delete-artist-${a.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
+                    <IconBtn title="Supprimer" onClick={() => setDeleteTarget({ id: a.id, name: a.name })} danger testId={`delete-artist-${a.id}`}><Trash2 className="w-3.5 h-3.5" /></IconBtn>
                   </div>
                 </div>
                 {a.bio && <p className="text-sm text-zinc-400 mt-2 line-clamp-2">{a.bio}</p>}
@@ -162,6 +181,23 @@ export default function ArtistsTab({ onMutate }) {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <AlertDialogContent className="bg-[#121215] border border-zinc-800 rounded-none text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-xl font-bold">Supprimer l'artiste ?</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              « {deleteTarget?.name} » sera définitivement supprimé et retiré de tous les événements associés.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-none bg-transparent border border-zinc-800 text-zinc-400 hover:text-white">Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={doDelete} className="rounded-none bg-red-600 hover:bg-red-700 text-white font-bold uppercase tracking-widest text-xs">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -177,13 +213,8 @@ function Field({ label, children }) {
 
 function IconBtn({ children, onClick, title, danger, testId }) {
   return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      data-testid={testId}
-      className={`p-1.5 border border-zinc-800 hover:border-zinc-600 transition-colors ${danger ? "hover:text-red-500" : "hover:text-white"} text-zinc-400`}
-    >
+    <button type="button" title={title} onClick={onClick} data-testid={testId}
+      className={`p-1.5 border border-zinc-800 hover:border-zinc-600 transition-colors ${danger ? "hover:text-red-500" : "hover:text-white"} text-zinc-400`}>
       {children}
     </button>
   );
