@@ -15,7 +15,7 @@ export default function Layout({ children }) {
               <Radio className="w-4 h-4 text-black" strokeWidth={2.5} />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-display font-black text-base tracking-tighter">SCÈNE PULSE</span>
+              <span className="font-display font-black text-base tracking-tighter">L'AMPLI</span>
               <span className="label-mono text-[10px]">Booking · Résidences · Live</span>
             </div>
           </NavLink>
@@ -56,7 +56,7 @@ export default function Layout({ children }) {
 
       <footer className="border-t border-zinc-800 mt-16">
         <div className="max-w-[1440px] mx-auto px-6 md:px-12 py-6 flex items-center justify-between">
-          <div className="label-mono">© {new Date().getFullYear()} Scène Pulse</div>
+          <div className="label-mono">© {new Date().getFullYear()} L'Ampli</div>
           <div className="label-mono">
             {location.pathname === "/calendrier" ? "CALENDRIER" : "DASHBOARD"}
           </div>

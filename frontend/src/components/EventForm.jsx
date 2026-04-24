@@ -16,8 +16,6 @@ const EMPTY = (type = "concert") => ({
   venue_id: "",
   start_date: "",
   end_date: "",
-  fee: 0,
-  currency: "EUR",
   status: "option",
   poster_file_id: null,
   tech_rider_file_id: null,
@@ -43,8 +41,6 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
           venue_id: editing.venue_id || "",
           start_date: editing.start_date?.slice(0, 10) || "",
           end_date: editing.end_date?.slice(0, 10) || "",
-          fee: editing.fee || 0,
-          currency: editing.currency || "EUR",
           status: editing.status || "option",
           poster_file_id: editing.poster_file_id || null,
           tech_rider_file_id: editing.tech_rider_file_id || null,
@@ -75,7 +71,6 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
         ...form,
         venue_id: form.venue_id || null,
         end_date: form.end_date || null,
-        fee: Number(form.fee) || 0,
       };
       if (editing) {
         await api.put(`/events/${editing.id}`, payload);
@@ -152,27 +147,6 @@ export default function EventForm({ open, onOpenChange, onSaved, editing, initia
             </Field>
             <Field label={form.type === "residence" ? "Date de fin *" : "Date de fin"}>
               <Input data-testid="event-end" type="date" className="rounded-none bg-[#1C1C21] border-zinc-800 font-mono" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <Field label="Cachet">
-                <Input data-testid="event-fee" type="number" step="0.01" className="rounded-none bg-[#1C1C21] border-zinc-800 font-mono" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} />
-              </Field>
-            </div>
-            <Field label="Devise">
-              <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
-                <SelectTrigger data-testid="event-currency" className="rounded-none bg-[#1C1C21] border-zinc-800">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1C1C21] border-zinc-800 text-white rounded-none">
-                  <SelectItem value="EUR">EUR €</SelectItem>
-                  <SelectItem value="USD">USD $</SelectItem>
-                  <SelectItem value="GBP">GBP £</SelectItem>
-                  <SelectItem value="CHF">CHF</SelectItem>
-                </SelectContent>
-              </Select>
             </Field>
           </div>
 

@@ -53,13 +53,9 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-5 mb-10 border border-zinc-800 bg-[#121215]" data-testid="stats-bar">
         <StatCell label="Événements" value={stats?.total_events ?? "—"} />
         <StatCell label="À venir" value={stats?.upcoming_events ?? "—"} />
+        <StatCell label="Confirmés" value={stats?.confirmed ?? "—"} />
         <StatCell label="Résidences" value={stats?.residencies ?? "—"} />
         <StatCell label="Artistes" value={stats?.artists ?? "—"} />
-        <StatCell
-          label="Cachets confirmés"
-          value={stats ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(stats.total_fees_confirmed || 0) : "—"}
-          wide
-        />
       </div>
 
       {/* Tabs */}
@@ -95,9 +91,9 @@ export default function Dashboard() {
   );
 }
 
-function StatCell({ label, value, wide }) {
+function StatCell({ label, value }) {
   return (
-    <div className={`p-5 border-r border-zinc-800 last:border-r-0 ${wide ? "col-span-2 md:col-span-1" : ""}`}>
+    <div className="p-5 border-r border-zinc-800 last:border-r-0">
       <div className="label-mono mb-2">{label}</div>
       <div className="font-mono text-2xl font-medium text-white tabular-nums">{value}</div>
     </div>

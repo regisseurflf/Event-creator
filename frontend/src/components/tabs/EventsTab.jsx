@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, fileUrl } from "@/lib/api";
+import { api, fileUrl, roadmapUrl } from "@/lib/api";
 import EventForm from "@/components/EventForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Pencil, Trash2, Ticket, FileText, MapPin, Search, Filter } from "lucide-react";
+import { Plus, Pencil, Trash2, Ticket, FileText, MapPin, Search, Filter, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABEL = { confirmed: "Confirmé", option: "Option", cancelled: "Annulé" };
@@ -63,7 +63,6 @@ export default function EventsTab({ onMutate }) {
   };
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-  const fmtFee = (n, c) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: c || "EUR", maximumFractionDigits: 0 }).format(n || 0);
 
   return (
     <div data-testid="events-tab">
@@ -123,7 +122,6 @@ export default function EventsTab({ onMutate }) {
                 <Th>Date</Th>
                 <Th>Lieu</Th>
                 <Th>Artistes</Th>
-                <Th className="text-right">Cachet</Th>
                 <Th>Statut</Th>
                 <Th>Docs</Th>
                 <Th></Th>
@@ -162,7 +160,6 @@ export default function EventsTab({ onMutate }) {
                       e.artist_ids.map((id) => artistById[id]?.name).filter(Boolean).join(", ")
                     )}
                   </td>
-                  <td className="p-3 text-right font-mono tabular-nums whitespace-nowrap">{fmtFee(e.fee, e.currency)}</td>
                   <td className="p-3">
                     <span className={`inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 border ${STATUS_CLR[e.status]}`}>
                       {STATUS_LABEL[e.status]}
@@ -170,6 +167,9 @@ export default function EventsTab({ onMutate }) {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
+                      <a href={roadmapUrl(e.id)} target="_blank" rel="noreferrer" title="Feuille de route PDF" data-testid={`roadmap-event-${e.id}`} className="text-zinc-400 hover:text-[#FF5A00]">
+                        <FileDown className="w-4 h-4" />
+                      </a>
                       {e.tech_rider_file_id && <a href={fileUrl(e.tech_rider_file_id)} target="_blank" rel="noreferrer" title="Fiche technique" className="text-zinc-400 hover:text-[#FF5A00]"><FileText className="w-4 h-4" /></a>}
                       {e.contract_file_id && <a href={fileUrl(e.contract_file_id)} target="_blank" rel="noreferrer" title="Contrat" className="text-zinc-400 hover:text-[#FF5A00]"><FileText className="w-4 h-4" /></a>}
                     </div>

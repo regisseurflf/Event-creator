@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, fileUrl } from "@/lib/api";
+import { api, fileUrl, roadmapUrl } from "@/lib/api";
 import EventForm from "@/components/EventForm";
 import { Button } from "@/components/ui/button";
-import { Plus, Pencil, Trash2, Palette, MapPin, CalendarRange, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Palette, MapPin, CalendarRange, FileText, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABEL = { confirmed: "Confirmé", option: "Option", cancelled: "Annulé" };
@@ -133,6 +133,9 @@ export default function ResidencesTab({ onMutate }) {
                     {r.notes && <p className="text-sm text-zinc-400 mt-3 line-clamp-2">{r.notes}</p>}
 
                     <div className="flex items-center gap-3 mt-3">
+                      <a href={roadmapUrl(r.id)} target="_blank" rel="noreferrer" data-testid={`roadmap-residence-${r.id}`} className="inline-flex items-center gap-1 text-xs text-[#FF5A00] hover:underline">
+                        <FileDown className="w-3 h-3" /> Feuille de route
+                      </a>
                       {r.tech_rider_file_id && (
                         <a href={fileUrl(r.tech_rider_file_id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-[#FF5A00] hover:underline">
                           <FileText className="w-3 h-3" /> Fiche technique

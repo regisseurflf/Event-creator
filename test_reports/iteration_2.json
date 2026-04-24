@@ -1,0 +1,40 @@
+{
+  "summary": "Completed full backend + frontend testing for L'Ampli v2 (renamed from Scène Pulse). Backend: 13/13 pytest tests passed — L'Ampli branding in GET /api/, /stats new shape (total_fees_confirmed removed, confirmed added), events without fee/currency accepted, PATCH /events/{id}/dates (concert and residence with end_date), GET /events/{id}/roadmap.pdf returns valid %PDF-1.4 (>500 bytes) with application/pdf content-type, 404 on unknown id, full CRUD regressions pass, file upload/download (PNG + PDF) still works. Frontend: L'AMPLI branding visible in header, dashboard stats bar shows exactly 5 columns (Événements / À venir / Confirmés / Résidences / Artistes) with NO 'Cachets confirmés', EventForm has no cachet/devise fields, EventsTab has no Cachet column and roadmap-event-{id} icon opens valid roadmap.pdf URL, ResidencesTab roadmap-residence-{id} link present. Calendar: view-month/week/day switcher works; WeekView renders 7 columns; prev/next navigation works in all views; DayView renders with date title; side panel shows Feuille de route PDF link; drag & drop (HTML5) on an event chip from one day cell to another fires PATCH /api/events/{id}/dates with shifted start_date, backend persists the change, and toast 'Événement déplacé' is shown.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All dialogs", "issues": ["(Pre-existing, from iter 1) Radix DialogContent missing DialogDescription / aria-describedby — a11y console warning only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "bugs_found_and_fixed_by_testing_agent": [
+    "/app/frontend/src/components/tabs/EventsTab.jsx: missing imports roadmapUrl (from @/lib/api) and FileDown (from lucide-react) caused ReferenceError runtime crashes that blew up the whole Events tab. Added both imports. Verified fixed — no runtime error overlay, roadmap-event-{id} anchor renders with correct href /api/events/{id}/roadmap.pdf."
+  ],
+  "critical_code_review_comments": [
+    "server.py still uses blocking requests.put/get for Emergent object storage inside async endpoints (pre-existing, flagged in iter 1).",
+    "CalendarPage.jsx: HTML5 DnD works but native mouse-drag in Playwright does NOT trigger dragstart/drop — had to use synthetic DragEvent dispatch. For users on touch devices DnD will not work (touch events are not wired). Consider a pointer-based fallback or HTML5 DnD polyfill if touch users are expected.",
+    "CalendarPage.jsx onDrop: when source === target date, no-op is correct. Good.",
+    "EventsTab.jsx / ResidencesTab.jsx: import hygiene — missing imports would have been caught by an ESLint rule like no-undef. Worth enabling CRA's react-app eslint in strict mode.",
+    "server.py PATCH /events/{id}/dates accepts arbitrary ISO strings without validation — consider pydantic validators to ensure YYYY-MM-DD or ISO 8601."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (rewritten for v2 — adds L'Ampli health check, PATCH /dates tests, roadmap.pdf tests, removes fee/currency assertions, updates /stats shape assertion)",
+    "/app/frontend/src/components/tabs/EventsTab.jsx (added missing imports: roadmapUrl, FileDown)"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "100% (all requested flows pass after fix)"},
+  "test_credentials": "N/A — single-user app, no auth",
+  "seed_data_creation": "Seeded TEST_UIArtist / TEST_UIVenue / TEST_UIEvent / TEST_UIResidence during UI tests; all cleaned up via API after testing. No residual TEST_* data left.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/backend_test.py covers v2 shape (13 tests). Run: pytest /app/backend/tests/backend_test.py -v. Stats shape: total_events, upcoming_events, artists, venues, residencies, confirmed (NO total_fees_confirmed). Events model has NO fee/currency. New endpoints: PATCH /api/events/{id}/dates {start_date, end_date?}, GET /api/events/{id}/roadmap.pdf (reportlab, returns %PDF-1.4). Calendar DnD uses HTML5 draggable+onDrop; Playwright native mouse drag does NOT trigger it — use page.evaluate with synthetic DragEvent + DataTransfer. Calendar testids: view-month/week/day, cal-prev/next/today, cal-day-YYYY-MM-DD (month), week-day-YYYY-MM-DD (week), day-view, chip-{id}, side-event-{id}, side-roadmap-{id}, day-event-{id}, day-roadmap-{id}, roadmap-event-{id}, roadmap-residence-{id}. Stats labels are rendered UPPERCASE via CSS — use case-insensitive comparison.",
+  "rca_of_fixed_issue": "Root cause of EventsTab runtime crash: incremental refactor in iteration 2 added `<a href={roadmapUrl(e.id)}>` and `<FileDown/>` JSX to EventsTab.jsx but did not update the existing import statements. Both `roadmapUrl` (should come from '@/lib/api') and `FileDown` (from 'lucide-react') were undefined at runtime, causing a ReferenceError inside Array.map and tearing down the Events tab tree entirely. Fix: added both imports. Reproduction: load /, click 'Événements' tab while at least one event exists. Expected: table renders with PDF icon. Before fix: CRA runtime error overlay 'roadmapUrl is not defined' (and after that fix, 'FileDown is not defined'). After fix: verified end-to-end table renders, roadmap anchor has correct href, no console errors."
+}

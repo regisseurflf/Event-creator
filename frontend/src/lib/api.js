@@ -9,3 +9,4 @@ export const api = axios.create({
 });
 
 export const fileUrl = (fileId) => `${API}/files/${fileId}`;
+export const roadmapUrl = (eventId) => `${API}/events/${eventId}/roadmap.pdf`;
