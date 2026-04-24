@@ -9,7 +9,6 @@
   "scripts": {
     "electron:dev": "electron .",
     "frontend:build": "cd frontend && npm run build",
-    "backend:build": "cd electron && pyinstaller --onefile --name lampli-server --add-data '../backend/server.py:.' backend_launcher.py",
     "dist": "npm run frontend:build && electron-builder --mac",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -28,9 +27,7 @@
       "icon": "electron/assets/icon.icns"
     },
     "dmg": {
-      "title": "L'Ampli",
-      "background": "electron/assets/dmg-background.png",
-      "window": { "width": 600, "height": 400 }
+      "title": "L'Ampli"
     },
     "files": [
       "electron/**/*",
