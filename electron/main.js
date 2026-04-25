@@ -99,6 +99,7 @@ function createWindow(backendPort) {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
+      webSecurity: false, // nécessaire pour Vite dev (modules ES cross-origin)
     },
     icon: path.join(__dirname, "assets", "icon.png"),
     title: "L'Ampli",
