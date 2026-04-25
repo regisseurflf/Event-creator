@@ -35,5 +35,7 @@ export default defineConfig({
   build: {
     outDir: "build",
     sourcemap: false,
+    base: "./",
   },
+  base: "./",  // chemins relatifs pour Electron packagé
 });
