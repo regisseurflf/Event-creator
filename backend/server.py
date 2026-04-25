@@ -193,7 +193,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=413, detail="Fichier trop volumineux (max 25 Mo)")
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "bin"
     file_id = str(uuid.uuid4())
-    path = f"{APP_NAME}/uploads/{file_id}.{ext}"
+    path = f"{file_id}.{ext}"
     content_type = file.content_type or "application/octet-stream"
     result = await put_object(path, data, content_type)
     doc = {
