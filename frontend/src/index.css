@@ -187,3 +187,11 @@ h1, h2, h3, h4, h5, h6, .font-display {
         border-bottom-width: inherit;
     }
 }
+
+/* ── Electron titlebar drag zone ─────────────────────────────────────────── */
+.electron-drag {
+  -webkit-app-region: drag;
+}
+.electron-no-drag {
+  -webkit-app-region: no-drag;
+}

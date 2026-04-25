@@ -94,6 +94,7 @@ function createWindow(backendPort) {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 12, y: 16 },
     backgroundColor: "#0A0A0C",
     webPreferences: {
       nodeIntegration: false,

@@ -12,10 +12,10 @@ export default function Layout({ children }) {
   return (
     <div className="min-h-screen flex flex-col relative z-10">
       <header
-        className="border-b border-zinc-800 bg-[#0A0A0C]/80 backdrop-blur sticky top-0 z-50"
+        className="border-b border-zinc-800 bg-[#0A0A0C]/80 backdrop-blur sticky top-0 z-50 electron-drag"
         data-testid="main-header"
       >
-        <div className="max-w-[1440px] mx-auto px-6 md:px-12 h-16 flex items-center justify-between gap-6">
+        <div className="max-w-[1440px] mx-auto px-6 md:px-12 h-16 flex items-center justify-between gap-6 electron-no-drag" style={{ paddingLeft: "80px" }}>
           <NavLink to="/dashboard" className="flex items-center gap-3 group shrink-0" data-testid="brand-link">
             <div className="w-8 h-8 bg-[#FF5A00] flex items-center justify-center group-hover:rotate-3 transition-transform">
               <Radio className="w-4 h-4 text-black" strokeWidth={2.5} />
