@@ -116,6 +116,7 @@ function createWindow(backendPort) {
   if (isDev) {
     mainWindow.loadURL(`http://127.0.0.1:3000`);
     mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, "..", "frontend", "build", "index.html"));
   }
