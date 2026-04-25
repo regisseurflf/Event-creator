@@ -118,7 +118,15 @@ function createWindow(backendPort) {
     mainWindow.webContents.openDevTools();
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "..", "frontend", "build", "index.html"));
+    const indexPath = path.join(__dirname, "..", "frontend", "build", "index.html");
+    console.log("[electron] Loading:", indexPath);
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error("[electron] loadFile error:", err);
+      const fallback = path.join(process.resourcesPath, "app.asar", "frontend", "build", "index.html");
+      console.log("[electron] Trying fallback:", fallback);
+      mainWindow.loadFile(fallback);
+    });
+    mainWindow.webContents.openDevTools();
   }
 
   // Ouvrir les liens externes dans le navigateur système
