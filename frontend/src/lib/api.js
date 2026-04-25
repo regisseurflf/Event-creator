@@ -12,6 +12,9 @@ const getBackendUrl = () => {
 // Toujours recalculer l'URL à chaque appel (port dynamique Electron)
 export const getDynamicApi = () => `${getBackendUrl()}/api`;
 
+// Alias statique — utiliser getDynamicApi() de préférence
+export const API = getDynamicApi();
+
 // Intercepteur : recalcule baseURL avant chaque requête
 export const api = axios.create({ timeout: 60000 });
 api.interceptors.request.use((config) => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, API, openRoadmap } from "@/lib/api";
+import { api, getDynamicApi, openRoadmap } from "@/lib/api";
 import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Move, Download, List, Share2, RotateCw, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -238,7 +238,7 @@ export default function CalendarPage() {
       s = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
       e = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
     }
-    return `${API}/export/events.ics?start=${ymd(s)}&end=${ymd(e)}`;
+    return `${getDynamicApi()}/export/events.ics?start=${ymd(s)}&end=${ymd(e)}`;
   }, [view, cursor]);
 
   return (

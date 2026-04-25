@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, API, openRoadmap } from "@/lib/api";
+import { api, getDynamicApi, openRoadmap } from "@/lib/api";
 import { ChevronLeft, ChevronRight, Circle, FileDown, MapPin, Users, Radio, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -95,7 +95,7 @@ export default function PublicCalendar() {
     if (view === "week") { s = startOfWeek(cursor); e = addDays(s, 6); }
     else if (view === "day") { s = cursor; e = cursor; }
     else { s = new Date(cursor.getFullYear(), cursor.getMonth(), 1); e = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0); }
-    return `${API}/export/events.ics?start=${ymd(s)}&end=${ymd(e)}`;
+    return `${getDynamicApi()}/export/events.ics?start=${ymd(s)}&end=${ymd(e)}`;
   }, [view, cursor]);
 
   const handleRoadmap = (eid) => openRoadmap(eid, `/public/${token}/events/${eid}/roadmap.pdf`);
