@@ -25,9 +25,11 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env', override=False)  # silently ignored if absent in packaged app
 
 mongo_url = os.environ['MONGO_URL']
+# Désactiver TLS pour les connexions locales (localhost/127.0.0.1)
+_is_local = any(h in mongo_url for h in ['localhost', '127.0.0.1'])
 client = AsyncIOMotorClient(
     mongo_url,
-    tlsCAFile=certifi.where(),
+    **({} if _is_local else {'tlsCAFile': certifi.where()}),
 )
 db = client[os.environ['DB_NAME']]
 
